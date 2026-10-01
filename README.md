@@ -1,5 +1,7 @@
 # Paraffin PID — регулятор нагревателя для плавки парафина
 
+[![CI](https://github.com/vicgor/paraffin-pid/actions/workflows/ci.yml/badge.svg)](https://github.com/vicgor/paraffin-pid/actions/workflows/ci.yml)
+
 Прошивка ПИД-регулятора температуры для ванны плавки парафина/воска.
 Один исходный код собирается под **RP2350 (Pico 2 / Pico 2 W)**, **ESP32-S3**, **ESP32-C6**
 и разные дисплеи: **OLED 0.96"/1.3"**, **TFT 0.96" 80×160**, **TFT 1.14"–2.8"** (ST7735/ST7789/ILI9341).
@@ -69,6 +71,12 @@ build_flags = ${mcu_esp32s3.build_flags} -DDISPLAY_ST7789 -DDISP_W=240 -DDISP_H=
 Платформы: ESP32 собирается через [pioarduino](https://github.com/pioarduino/platform-espressif32)
 (Arduino core 3.x — единственный вариант с поддержкой C6), RP2350 — через ядро
 [arduino-pico](https://github.com/earlephilhower/arduino-pico).
+
+### CI
+
+GitHub Actions (`.github/workflows/ci.yml`) на каждый push и pull request прогоняет
+`pio test -e native`, затем параллельно собирает все 14 окружений. Готовые прошивки
+(`firmware.bin` / `firmware.uf2`) лежат в артефактах запуска 30 дней.
 
 ## Подключение
 

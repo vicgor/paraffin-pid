@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Unit tests (native)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-native-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-native-
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Run tests
+        run: pio test -e native -v
+
+  build:
+    name: Build ${{ matrix.env }}
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - esp32s3-oled
+          - esp32s3-sh1106
+          - esp32s3-tft096
+          - esp32s3-tft
+          - esp32s3-ili9341
+          - esp32c6-oled
+          - esp32c6-tft096
+          - esp32c6-tft
+          - pico2-oled
+          - pico2-tft096
+          - pico2-tft
+          - pico2w-oled
+          - pico2w-tft096
+          - pico2w-tft
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Cache key
+        id: key
+        run: echo "family=${MATRIX_ENV%%-*}" >> "$GITHUB_OUTPUT"
+        env:
+          MATRIX_ENV: ${{ matrix.env }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ steps.key.outputs.family }}-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-${{ steps.key.outputs.family }}-
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+      - name: Build
+        run: pio run -e ${{ matrix.env }}
+      - name: Firmware size
+        run: pio run -e ${{ matrix.env }} -t size | tail -n 5
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.env }}
+          path: |
+            .pio/build/${{ matrix.env }}/firmware.bin
+            .pio/build/${{ matrix.env }}/firmware.uf2
+            .pio/build/${{ matrix.env }}/bootloader.bin
+            .pio/build/${{ matrix.env }}/partitions.bin
+          if-no-files-found: error
+          retention-days: 30
