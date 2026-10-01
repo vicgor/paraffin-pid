@@ -1,0 +1,7 @@
+{
+  "name": "control",
+  "version": "1.0.0",
+  "description": "Platform-independent PID, relay autotune, setpoint ramp and safety logic",
+  "frameworks": "*",
+  "platforms": "*"
+}
