@@ -68,9 +68,16 @@ build_flags = ${mcu_esp32s3.build_flags} -DDISPLAY_ST7789 -DDISP_W=240 -DDISP_H=
 Вместо энкодера — три кнопки: `-DPIN_BTN_UP=.. -DPIN_BTN_DOWN=..` (OK — `PIN_ENC_BTN`).
 На 0.96" IPS цвета негативные — `-DST7735_TAB=INITR_MINI160x80`.
 
-Платформы: ESP32 собирается через [pioarduino](https://github.com/pioarduino/platform-espressif32)
-(Arduino core 3.x — единственный вариант с поддержкой C6), RP2350 — через ядро
-[arduino-pico](https://github.com/earlephilhower/arduino-pico).
+Платформы:
+- ESP32-S3 — официальная [platformio/espressif32](https://github.com/platformio/platform-espressif32)
+  7.1.3 (Arduino core 2.0.17).
+- ESP32-C6 — [pioarduino](https://github.com/pioarduino/platform-espressif32) (Arduino core 3.x,
+  единственный вариант с поддержкой C6).
+- RP2350 — ядро [arduino-pico](https://github.com/earlephilhower/arduino-pico).
+
+PlatformIO нужно запускать на **Python 3.10–3.14**: pioarduino проверяет версию при загрузке,
+и если она установлена в `~/.platformio`, на Python 3.15 падает даже сборка S3. На macOS с
+Homebrew-Python 3.15: `brew uninstall platformio && uv tool install --python 3.13 platformio`.
 
 ### CI
 
