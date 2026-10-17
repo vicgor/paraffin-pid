@@ -1,6 +1,7 @@
 #include "hal.h"
 
 #if PLATFORM_ESP32
+#include <esp_idf_version.h>
 #include <esp_mac.h>
 #include <esp_system.h>
 #include <esp_task_wdt.h>
@@ -58,11 +59,25 @@ void startControlLoop(TickFn fn, uint32_t periodMs) {
 // ---------------------------------------------------------------- Watchdog
 #if PLATFORM_ESP32
 void watchdogBegin(uint32_t timeoutMs) {
+#if ESP_IDF_VERSION_MAJOR >= 5
+    // Arduino core 3.x (pioarduino): TWDT уже создан ядром — перенастраиваем.
     esp_task_wdt_config_t cfg = {};
     cfg.timeout_ms = timeoutMs;
     cfg.idle_core_mask = 0;
     cfg.trigger_panic = true;
     if (esp_task_wdt_reconfigure(&cfg) != ESP_OK) esp_task_wdt_init(&cfg);
+#else
+    // Arduino core 2.x (официальная платформа PlatformIO, IDF 4.4): таймаут в секундах,
+    // повторный init обновляет таймаут и panic. Округляем вверх, чтобы не сократить таймаут.
+    const uint32_t timeoutS = (timeoutMs + 999) / 1000;
+    esp_task_wdt_init(timeoutS ? timeoutS : 1, true);
+    // Как idle_core_mask = 0 в 3.x: следим только за задачей управления, а не за idle-задачами
+    // (иначе долгий Wi-Fi/веб на ядре 0 перезагрузит контроллер без вины цикла управления).
+    for (int core = 0; core < portNUM_PROCESSORS; ++core) {
+        TaskHandle_t idle = xTaskGetIdleTaskHandleForCPU(core);
+        if (idle) esp_task_wdt_delete(idle);  // ESP_ERR_* если не была подписана — не важно
+    }
+#endif
     esp_task_wdt_add(nullptr);  // подписываем текущую задачу (control)
 }
 void watchdogFeed() { esp_task_wdt_reset(); }
