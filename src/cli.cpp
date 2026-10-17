@@ -5,6 +5,10 @@
 #include "hal.h"
 #include "net/net.h"
 #include "settings_fields.h"
+#if SIM_SENSORS
+#include "sensors.h"
+TempSensors& simSensors();
+#endif
 
 namespace {
 char g_line[160];
@@ -40,7 +44,15 @@ void help() {
         "  mqtt <host> [port] [user] [pass]   (mqtt - выключить)\n"
         "  webpass <pass|->        пароль веб-интерфейса (логин admin)\n"
         "  hostname <name> | buzzer <0|1> | swap | rescan\n"
-        "  save | reboot | factory");
+        "  save | reboot | factory"
+#if SIM_SENSORS
+        "\n  sim                     состояние модели\n"
+        "  sim speed <x>           ускорение времени (1..100)\n"
+        "  sim wax <C> | heater <C> | amb <C> | power <W>\n"
+        "  sim fail <0|1>          обрыв датчика парафина\n"
+        "  sim reset               остудить до комнатной"
+#endif
+    );
 }
 
 void copyArg(char* dst, size_t n, const char* src) {
@@ -112,6 +124,22 @@ void exec(char* line) {
     else if (!strcmp(c, "save")) app::saveNow();
     else if (!strcmp(c, "reboot")) { app::stop(); delay(100); hal::reboot(); }
     else if (!strcmp(c, "factory")) app::factoryReset();
+#if SIM_SENSORS
+    else if (!strcmp(c, "sim")) {
+        TempSensors& m = simSensors();
+        const char* k = argc >= 2 ? argv[1] : "";
+        const float v = argc >= 3 ? atof(argv[2]) : 0;
+        if (argc >= 3 && !strcmp(k, "speed")) m.speed = constrain(v, 0.1f, 100.0f);
+        else if (argc >= 3 && !strcmp(k, "wax")) m.waxC = v;
+        else if (argc >= 3 && !strcmp(k, "heater")) m.heaterC = v;
+        else if (argc >= 3 && !strcmp(k, "amb")) m.ambient = v;
+        else if (argc >= 3 && !strcmp(k, "power")) m.powerW = v;
+        else if (argc >= 3 && !strcmp(k, "fail")) m.failProc = v != 0;
+        else if (!strcmp(k, "reset")) m.reset();
+        Serial.printf("sim: wax=%.2f heater=%.2f amb=%.1f power=%.0fW melted=%.0f%% speed=x%.1f fail=%d ssr=%d\n", m.waxC,
+                      m.heaterC, m.ambient, m.powerW, 100 * m.melted / m.latentJ, m.speed, m.failProc, app::heaterOn());
+    }
+#endif
     else Serial.println("? (help)");
 }
 }  // namespace
