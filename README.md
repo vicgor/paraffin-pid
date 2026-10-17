@@ -51,7 +51,7 @@ pio test -e native                      # тесты логики на ПК
 
 | Окружение | Плата | Дисплей |
 |---|---|---|
-| `esp32s3-oled` / `-sh1106` / `-tft096` / `-tft` / `-ili9341` | ESP32-S3-DevKitC-1 | SSD1306 / SH1106 / ST7735 80×160 / ST7789 240×320 / ILI9341 |
+| `esp32s3-oled` / `-sh1106` / `-sh1106-spi` / `-tft096` / `-tft` / `-ili9341` | ESP32-S3-DevKitC-1 | SSD1306 / SH1106 I2C / SH1106 SPI (7 выводов) / ST7735 80×160 / ST7789 240×320 / ILI9341 |
 | `esp32c6-oled` / `-tft096` / `-tft` | ESP32-C6-DevKitC-1 | |
 | `pico2-oled` / `-tft096` / `-tft` | Raspberry Pi Pico 2 (без Wi-Fi) | |
 | `pico2w-oled` / `-tft096` / `-tft` | Raspberry Pi Pico 2 W | |
@@ -63,6 +63,10 @@ pio test -e native                      # тесты логики на ПК
 extends = mcu_esp32s3
 build_flags = ${mcu_esp32s3.build_flags} -DDISPLAY_ST7789 -DDISP_W=240 -DDISP_H=240
 ```
+
+OLED 1.3" с 7 выводами (GND VCC D0 D1 RES DC CS) работает по SPI: `esp32s3-sh1106-spi`,
+подключение D0→GPIO12, D1→GPIO11, RES→GPIO14, DC→GPIO13, CS→GPIO10. Для SSD1306 на SPI —
+`-DDISPLAY_SSD1306 -DOLED_SPI`, скорость шины — `-DOLED_SPI_HZ=1000000UL`.
 
 Пины переопределяются так же: `-DPIN_SSR=38`. Энкодер крутится «не туда» — `-DENC_REVERSE`.
 Вместо энкодера — три кнопки: `-DPIN_BTN_UP=.. -DPIN_BTN_DOWN=..` (OK — `PIN_ENC_BTN`).

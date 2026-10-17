@@ -1,6 +1,9 @@
 #include "display.h"
 
 #include <SPI.h>
+#ifndef TFT_SPI
+#define TFT_SPI SPI  // шина TFT; для RP2350-LCD-0.96 = SPI1
+#endif
 #include <Wire.h>
 
 #include "../hal.h"
@@ -18,8 +21,21 @@ using OledDriver = Adafruit_SH1106G;
 
 class OledDisplay : public Display {
 public:
+#if defined(OLED_SPI)
+    // 7-выводные модули (GND VCC D0 D1 RES DC CS): аппаратный SPI на пинах TFT
+    OledDisplay() : oled_(DISP_W, DISP_H, &TFT_SPI, PIN_TFT_DC, PIN_TFT_RST, PIN_TFT_CS, OLED_SPI_HZ) {}
+#else
     OledDisplay() : oled_(DISP_W, DISP_H, &Wire, -1) {}
+#endif
     bool begin() override {
+#if defined(OLED_SPI)
+#if PLATFORM_ESP32
+        TFT_SPI.begin(PIN_TFT_SCK, -1, PIN_TFT_MOSI, PIN_TFT_CS);
+#else
+        TFT_SPI.setSCK(PIN_TFT_SCK);
+        TFT_SPI.setTX(PIN_TFT_MOSI);
+#endif
+#else
 #if PLATFORM_ESP32
         Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
 #else
@@ -28,6 +44,7 @@ public:
         Wire.begin();
 #endif
         Wire.setClock(400000);
+#endif
 #if defined(DISPLAY_SSD1306)
         if (!oled_.begin(SSD1306_SWITCHCAPVCC, OLED_I2C_ADDR)) return false;
 #else
@@ -112,11 +129,11 @@ private:
 class TftDisplay : public Display {
 public:
 #if defined(DISPLAY_ILI9341)
-    TftDisplay() : tft_(&SPI, PIN_TFT_DC, PIN_TFT_CS, PIN_TFT_RST) {}
+    TftDisplay() : tft_(&TFT_SPI, PIN_TFT_DC, PIN_TFT_CS, PIN_TFT_RST) {}
 #elif defined(DISPLAY_ST7789)
-    TftDisplay() : tft_(&SPI, PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST) {}
+    TftDisplay() : tft_(&TFT_SPI, PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST) {}
 #else
-    TftDisplay() : tft_(&SPI, PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST) {}
+    TftDisplay() : tft_(&TFT_SPI, PIN_TFT_CS, PIN_TFT_DC, PIN_TFT_RST) {}
 #endif
 
     bool begin() override {
@@ -125,10 +142,10 @@ public:
         digitalWrite(PIN_TFT_BL, HIGH);
 #endif
 #if PLATFORM_ESP32
-        SPI.begin(PIN_TFT_SCK, -1, PIN_TFT_MOSI, PIN_TFT_CS);
+        TFT_SPI.begin(PIN_TFT_SCK, -1, PIN_TFT_MOSI, PIN_TFT_CS);
 #else
-        SPI.setSCK(PIN_TFT_SCK);
-        SPI.setTX(PIN_TFT_MOSI);
+        TFT_SPI.setSCK(PIN_TFT_SCK);
+        TFT_SPI.setTX(PIN_TFT_MOSI);
 #endif
 #if defined(DISPLAY_ILI9341)
         tft_.begin(DISP_SPI_HZ);
