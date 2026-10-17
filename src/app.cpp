@@ -44,6 +44,9 @@ void controlTick() {
         g_rescanReq = false;
         g_sensors.rescan();
     }
+#if SIM_SENSORS
+    g_sensors.setHeater(g_ssrOn);
+#endif
     g_sensors.tick(now);
 
     float duty;
@@ -82,6 +85,10 @@ void controlTick() {
 }
 
 }  // namespace
+
+#if SIM_SENSORS
+TempSensors& simSensors() { return g_sensors; }
+#endif
 
 namespace app {
 
