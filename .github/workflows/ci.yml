@@ -27,7 +27,7 @@ jobs:
           key: pio-native-${{ hashFiles('platformio.ini') }}
           restore-keys: pio-native-
       - name: Install PlatformIO
-        run: pip install --upgrade platformio
+        run: pip install platformio==6.2.0
       - name: Run tests
         run: pio test -e native -v
 
@@ -70,7 +70,7 @@ jobs:
           key: pio-${{ steps.key.outputs.family }}-${{ hashFiles('platformio.ini') }}
           restore-keys: pio-${{ steps.key.outputs.family }}-
       - name: Install PlatformIO
-        run: pip install --upgrade platformio
+        run: pip install platformio==6.2.0
       - name: Build
         run: pio run -e ${{ matrix.env }}
       - name: Firmware size
