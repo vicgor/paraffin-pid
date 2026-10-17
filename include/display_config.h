@@ -2,6 +2,7 @@
 // Выбор дисплея — ровно один DISPLAY_* через build_flags:
 //   -DDISPLAY_SSD1306              OLED 0.96" 128x64 I2C
 //   -DDISPLAY_SH1106               OLED 1.3"  128x64 I2C
+//   + -DOLED_SPI                   OLED на SPI (7 выводов: D0=SCK D1=MOSI RES DC CS, пины PIN_TFT_*)
 //   -DDISPLAY_ST7735 -DDISP_W=160 -DDISP_H=80    TFT 0.96" 80x160 (IPS)
 //   -DDISPLAY_ST7735 -DDISP_W=160 -DDISP_H=128   TFT 1.8"  128x160
 //   -DDISPLAY_ST7789 -DDISP_W=240 -DDISP_H=135   TFT 1.14" 135x240
@@ -25,6 +26,9 @@
 #endif
 #ifndef OLED_I2C_ADDR
 #define OLED_I2C_ADDR 0x3C
+#endif
+#ifndef OLED_SPI_HZ
+#define OLED_SPI_HZ 8000000UL  // с длинными проводами на макетке можно снизить до 1000000UL
 #endif
 #endif
 

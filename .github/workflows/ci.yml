@@ -41,6 +41,7 @@ jobs:
         env:
           - esp32s3-oled
           - esp32s3-sh1106
+          - esp32s3-sh1106-spi
           - esp32s3-tft096
           - esp32s3-tft
           - esp32s3-ili9341
