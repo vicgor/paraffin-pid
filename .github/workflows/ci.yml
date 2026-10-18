@@ -1,8 +1,17 @@
 name: CI
 
 on:
+  # push только в main: для остальных веток прогон делает pull_request,
+  # иначе каждый коммит в ветке с PR запускал бы CI дважды (минуты Actions платные)
   push:
+    branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "hwtest/**"
+      - "max31865-selftest/**"
   workflow_dispatch:
 
 concurrency:
@@ -34,6 +43,8 @@ jobs:
   build:
     name: Build ${{ matrix.env }}
     needs: test
+    # draft-PR: только быстрые native-тесты, полная матрица сборок — после ready_for_review
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
