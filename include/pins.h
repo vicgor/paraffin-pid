@@ -4,8 +4,6 @@
 #include BOARD_PINS_FILE
 #elif defined(CONFIG_IDF_TARGET_ESP32S3)
 #include "boards/board_esp32s3.h"
-#elif defined(CONFIG_IDF_TARGET_ESP32C6)
-#include "boards/board_esp32c6.h"
 #elif defined(ARDUINO_ARCH_RP2040)
 #include "boards/board_rp2350.h"
 #else

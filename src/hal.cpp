@@ -90,8 +90,6 @@ void reboot() { ESP.restart(); }
 const char* chipName() {
 #if CONFIG_IDF_TARGET_ESP32S3
     return "ESP32-S3";
-#elif CONFIG_IDF_TARGET_ESP32C6
-    return "ESP32-C6";
 #elif CONFIG_IDF_TARGET_ESP32C3
     return "ESP32-C3";
 #else
