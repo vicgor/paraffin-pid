@@ -34,7 +34,6 @@ jobs:
         with:
           path: ~/.platformio
           key: pio-native-${{ hashFiles('platformio.ini') }}
-          restore-keys: pio-native-
       - name: Install PlatformIO
         run: pip install platformio==6.2.0
       - name: Run tests
@@ -75,11 +74,12 @@ jobs:
         run: echo "family=${MATRIX_ENV%%-*}" >> "$GITHUB_OUTPUT"
         env:
           MATRIX_ENV: ${{ matrix.env }}
+      # Без restore-keys: кэш подбирается только по точному хешу platformio.ini. Запасной ключ
+      # подсовывал кэш со старой платформой (после смены платформы S3 ломался esptool).
       - uses: actions/cache@v6
         with:
           path: ~/.platformio
           key: pio-${{ steps.key.outputs.family }}-${{ hashFiles('platformio.ini') }}
-          restore-keys: pio-${{ steps.key.outputs.family }}-
       - name: Install PlatformIO
         run: pip install platformio==6.2.0
       - name: Build
