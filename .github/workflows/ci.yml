@@ -61,6 +61,7 @@ jobs:
           - pico2w-oled
           - pico2w-tft096
           - pico2w-tft
+          - pico2-lcd096
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
