@@ -54,6 +54,7 @@ pio test -e native                      # тесты логики на ПК
 | `esp32s3-oled` / `-sh1106` / `-sh1106-spi` / `-tft096` / `-tft` / `-ili9341` | ESP32-S3-DevKitC-1 | SSD1306 / SH1106 I2C / SH1106 SPI (7 выводов) / ST7735 80×160 / ST7789 240×320 / ILI9341 |
 | `pico2-oled` / `-tft096` / `-tft` | Raspberry Pi Pico 2 (без Wi-Fi) | |
 | `pico2w-oled` / `-tft096` / `-tft` | Raspberry Pi Pico 2 W | |
+| `pico2-lcd096` | Waveshare RP2350-LCD-0.96 (встроенный ST7735S 160×80) | |
 
 Другие размеры экрана задаются флагами (см. `include/display_config.h`), например TFT 1.3" 240×240:
 
@@ -83,7 +84,7 @@ OLED 1.3" с 7 выводами (GND VCC D0 D1 RES DC CS) работает по 
 ### CI
 
 GitHub Actions (`.github/workflows/ci.yml`) на каждый push и pull request прогоняет
-`pio test -e native`, затем параллельно собирает все 12 окружений. Готовые прошивки
+`pio test -e native`, затем параллельно собирает все 13 окружений. Готовые прошивки
 (`firmware.bin` / `firmware.uf2`) лежат в артефактах запуска 30 дней.
 
 ## Подключение
