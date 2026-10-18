@@ -3,7 +3,7 @@
 [![CI](https://github.com/vicgor/paraffin-pid/actions/workflows/ci.yml/badge.svg)](https://github.com/vicgor/paraffin-pid/actions/workflows/ci.yml)
 
 Прошивка ПИД-регулятора температуры для ванны плавки парафина/воска.
-Один исходный код собирается под **RP2350 (Pico 2 / Pico 2 W)**, **ESP32-S3**, **ESP32-C6**
+Один исходный код собирается под **RP2350 (Pico 2 / Pico 2 W)**, **ESP32-S3**
 и разные дисплеи: **OLED 0.96"/1.3"**, **TFT 0.96" 80×160**, **TFT 1.14"–2.8"** (ST7735/ST7789/ILI9341).
 
 ## Возможности
@@ -52,7 +52,6 @@ pio test -e native                      # тесты логики на ПК
 | Окружение | Плата | Дисплей |
 |---|---|---|
 | `esp32s3-oled` / `-sh1106` / `-sh1106-spi` / `-tft096` / `-tft` / `-ili9341` | ESP32-S3-DevKitC-1 | SSD1306 / SH1106 I2C / SH1106 SPI (7 выводов) / ST7735 80×160 / ST7789 240×320 / ILI9341 |
-| `esp32c6-oled` / `-tft096` / `-tft` | ESP32-C6-DevKitC-1 | |
 | `pico2-oled` / `-tft096` / `-tft` | Raspberry Pi Pico 2 (без Wi-Fi) | |
 | `pico2w-oled` / `-tft096` / `-tft` | Raspberry Pi Pico 2 W | |
 
@@ -75,18 +74,16 @@ OLED 1.3" с 7 выводами (GND VCC D0 D1 RES DC CS) работает по 
 Платформы:
 - ESP32-S3 — официальная [platformio/espressif32](https://github.com/platformio/platform-espressif32)
   7.1.3 (Arduino core 2.0.17).
-- ESP32-C6 — [pioarduino](https://github.com/pioarduino/platform-espressif32) (Arduino core 3.x,
-  единственный вариант с поддержкой C6).
 - RP2350 — ядро [arduino-pico](https://github.com/earlephilhower/arduino-pico).
 
-PlatformIO нужно запускать на **Python 3.10–3.14**: pioarduino проверяет версию при загрузке,
-и если она установлена в `~/.platformio`, на Python 3.15 падает даже сборка S3. На macOS с
-Homebrew-Python 3.15: `brew uninstall platformio && uv tool install --python 3.13 platformio`.
+Рекомендуется PlatformIO Core 6.2.0 на Python 3.13 (`uv tool install --python 3.13 platformio==6.2.0`).
+Если в `~/.platformio` осталась платформа pioarduino от другого проекта, на Python 3.15 она
+падает при загрузке и ломает в том числе сборку S3 — используйте Python 3.10–3.14.
 
 ### CI
 
 GitHub Actions (`.github/workflows/ci.yml`) на каждый push и pull request прогоняет
-`pio test -e native`, затем параллельно собирает все 14 окружений. Готовые прошивки
+`pio test -e native`, затем параллельно собирает все 12 окружений. Готовые прошивки
 (`firmware.bin` / `firmware.uf2`) лежат в артефактах запуска 30 дней.
 
 ## Подключение
@@ -106,15 +103,15 @@ GitHub Actions (`.github/workflows/ci.yml`) на каждый push и pull reque
  TFT SPI:   SCK, MOSI(SDA), CS, DC, RST, BL(подсветка), 3.3V, GND
 ```
 
-| Сигнал | ESP32-S3 | ESP32-C6 | Pico 2 / 2 W |
-|---|---|---|---|
-| DS18B20 (1-Wire) | 4 | 3 | GP2 |
-| SSR | 5 | 2 | GP3 |
-| Зуммер | 16 | 11 | GP9 |
-| Энкодер A / B / кнопка | 6 / 7 / 15 | 18 / 19 / 20 | GP6 / GP7 / GP8 |
-| I2C SDA / SCL | 8 / 9 | 6 / 7 | GP4 / GP5 |
-| TFT SCK / MOSI / CS | 12 / 11 / 10 | 21 / 22 / 23 | GP18 / GP19 / GP17 |
-| TFT DC / RST / BL | 13 / 14 / 21 | 0 / 1 / 10 | GP20 / GP21 / GP22 |
+| Сигнал | ESP32-S3 | Pico 2 / 2 W |
+|---|---|---|
+| DS18B20 (1-Wire) | 4 | GP2 |
+| SSR | 5 | GP3 |
+| Зуммер | 16 | GP9 |
+| Энкодер A / B / кнопка | 6 / 7 / 15 | GP6 / GP7 / GP8 |
+| I2C SDA / SCL | 8 / 9 | GP4 / GP5 |
+| TFT SCK / MOSI / CS | 12 / 11 / 10 | GP18 / GP19 / GP17 |
+| TFT DC / RST / BL | 13 / 14 / 21 | GP20 / GP21 / GP22 |
 
 Советы: подтяните вывод SSR к GND резистором 10 кОм — при сбросе МК реле гарантированно
 выключено. Длинный кабель DS18B20 — витая пара, подтяжка 2.2–4.7 кОм у МК.

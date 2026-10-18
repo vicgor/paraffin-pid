@@ -55,9 +55,6 @@ jobs:
           - esp32s3-tft096
           - esp32s3-tft
           - esp32s3-ili9341
-          - esp32c6-oled
-          - esp32c6-tft096
-          - esp32c6-tft
           - pico2-oled
           - pico2-tft096
           - pico2-tft
