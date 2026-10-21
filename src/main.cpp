@@ -82,6 +82,8 @@ void loop() {
     g_buzzer.setEnabled(app::settings().buzzer);
     g_buzzer.tick(now);
     g_ui.tick(now);
+    // poll() вызывается внутри tick(); BACK обрабатывается отдельно от команд нагрева.
+    if (g_input.takeBack()) g_ui.back(now);
     net::loop();
     cli::loop();
     app::loopTick();

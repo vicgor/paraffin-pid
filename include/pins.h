@@ -18,3 +18,11 @@
 #ifndef ENC_STEPS_PER_DETENT
 #define ENC_STEPS_PER_DETENT 4
 #endif
+
+// Отдельные кнопки CON/BACK включаются только в соответствующих окружениях.
+#ifndef PIN_BTN_OK
+#define PIN_BTN_OK -1
+#endif
+#ifndef PIN_BTN_BACK
+#define PIN_BTN_BACK -1
+#endif
