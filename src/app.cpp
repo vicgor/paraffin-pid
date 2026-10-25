@@ -7,6 +7,12 @@
 
 namespace {
 
+#if SIM_SENSORS
+constexpr bool kSimSensors = true;
+#else
+constexpr bool kSimSensors = false;
+#endif
+
 hal::Mutex g_lock;
 ctl::Controller g_ctl;
 TempSensors g_sensors(PIN_ONEWIRE);
@@ -95,8 +101,10 @@ namespace app {
 const char* deviceId() { return g_id; }
 
 void begin() {
-    // Первым делом — гарантированно выключить нагрев
-    g_ssr.begin(PIN_SSR, SSR_ACTIVE_HIGH);
+    // Первым делом — гарантированно выключить нагрев.
+    // В sim-сборке выход SSR только логический: пин не активируется никогда.
+    g_ssr.begin(PIN_SSR, SSR_ACTIVE_HIGH, kSimSensors);
+    if (kSimSensors) Serial.println("[sim] SIM_SENSORS: SSR pin disabled (dry run)");
     snprintf(g_id, sizeof(g_id), "%08lx", (unsigned long)hal::chipId());
 
     const bool loaded = settings_store::load(g_cfg);
