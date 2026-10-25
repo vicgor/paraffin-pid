@@ -44,8 +44,8 @@ public:
     uint8_t deviceCount() const { return 2; }
     bool procPresent() const { return true; }
     bool heaterPresent() const { return true; }
-    const uint8_t* procAddr() const { return kProc; }
-    const uint8_t* heaterAddr() const { return kHeater; }
+    const uint8_t* procAddr() const { return kProc_; }
+    const uint8_t* heaterAddr() const { return kHeater_; }
     static void addrToStr(const uint8_t a[8], char out[17]) {
         static const char* hex = "0123456789ABCDEF";
         for (int k = 0; k < 8; ++k) {
@@ -66,8 +66,8 @@ public:
 
 private:
     static constexpr uint32_t kDtMs = 10;
-    static constexpr uint8_t kProc[8] = {0x28, 0x51, 0x4D, 0, 0, 0, 0, 0x01};
-    static constexpr uint8_t kHeater[8] = {0x28, 0x51, 0x4D, 0, 0, 0, 0, 0x02};
+    const uint8_t kProc_[8] = {0x28, 0x51, 0x4D, 0, 0, 0, 0, 0x01};
+    const uint8_t kHeater_[8] = {0x28, 0x51, 0x4D, 0, 0, 0, 0, 0x02};
 
     static float q(float t) { return roundf(t * 16) / 16; }  // дискретность 0.0625 °C
 
