@@ -1,4 +1,7 @@
 #pragma once
+#if SIM_SENSORS
+#include "sim_sensors.h"
+#else
 // Два DS18B20 на одной шине 1-Wire: «парафин» (регулируемый) и «ТЭН» (защита, необязательный).
 // Чтение неблокирующее: запрос преобразования → через 760 мс чтение.
 #include <Arduino.h>
@@ -42,3 +45,4 @@ private:
     volatile bool rescanReq_ = false;
     ctl::Measurement m_;
 };
+#endif  // SIM_SENSORS
