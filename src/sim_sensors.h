@@ -4,6 +4,7 @@
 // «ТЭН → парафин → среда» с плато плавления (как в test/test_control).
 // Вход модели — фактическое состояние SSR (setHeater), поэтому PID,
 // автотюнинг, защиты и UI работают как на реальной ванне.
+// Параметры меняет только control task (через app::simCmd), не loop().
 #include <Arduino.h>
 #include <math.h>
 #include <string.h>
@@ -22,8 +23,10 @@ public:
         // интегрируем модель с шагом 10 мс, «показания» — раз в секунду
         while (nowMs - lastMs_ >= kDtMs) {
             lastMs_ += kDtMs;
-            step(heaterOn_ ? 1.0f : 0.0f, kDtMs / 1000.0f);
+            // stuck: ТЭН греет независимо от команды SSR (пробитый симистор)
+            step((heaterOn_ || stuck) ? 1.0f : 0.0f, kDtMs / 1000.0f);
         }
+        if (hangBus) return;  // зависшая шина: новых измерений нет
         if (nowMs - lastReadMs_ < 1000) return;
         lastReadMs_ = nowMs;
         m_.procValid = !failProc;
@@ -55,14 +58,18 @@ public:
         out[16] = 0;
     }
 
-    // --- параметры модели (меняются из CLI: sim ...) ---
+    // --- параметры модели (меняет control task по командам sim ...) ---
     float ambient = 22, heaterC = 22, waxC = 22;
     float powerW = 1000, cHeater = 400, massKg = 3, cpWax = 2500;
     float gHW = 25, gWA = 3, meltC = 58, latentJ = 3 * 200e3f, melted = 0;
     float speed = 1;        // ускорение времени (1 = реальное)
     bool failProc = false;  // имитация обрыва датчика парафина
+    bool hangBus = false;   // имитация зависания 1-Wire (нет новых измерений)
+    bool stuck = false;     // имитация пробитого SSR: ТЭН греет при ssr=0
 
     void reset() { heaterC = waxC = ambient; melted = 0; }
+    // защита от деления на 0, если latentJ когда-нибудь станет 0
+    float meltedPct() const { return latentJ > 0 ? 100 * melted / latentJ : 100; }
 
 private:
     static constexpr uint32_t kDtMs = 10;

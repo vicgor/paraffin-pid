@@ -6,8 +6,8 @@
 #include "net/net.h"
 #include "settings_fields.h"
 #if SIM_SENSORS
-#include "sensors.h"
-TempSensors& simSensors();
+#include <math.h>
+#include <stdlib.h>
 #endif
 
 namespace {
@@ -47,9 +47,13 @@ void help() {
         "  save | reboot | factory"
 #if SIM_SENSORS
         "\n  sim                     состояние модели\n"
-        "  sim speed <x>           ускорение времени (1..100)\n"
-        "  sim wax <C> | heater <C> | amb <C> | power <W>\n"
+        "  sim speed <x>           ускорение времени (0.1..100)\n"
+        "  sim wax <C> | heater <C> | amb <C>   (-20..150)\n"
+        "  sim power <W>           мощность ТЭНа (0..3000)\n"
         "  sim fail <0|1>          обрыв датчика парафина\n"
+        "  sim bus <0|1>           зависание шины 1-Wire (нет измерений)\n"
+        "  sim stuck <0|1>         пробитый SSR: ТЭН греет при ssr=0\n"
+        "  sim hang                зависание цикла управления (WDT)\n"
         "  sim reset               остудить до комнатной"
 #endif
     );
@@ -60,6 +64,84 @@ void copyArg(char* dst, size_t n, const char* src) {
     strncpy(dst, src, n - 1);
     dst[n - 1] = 0;
 }
+
+#if SIM_SENSORS
+// Строгий разбор числа: "abc", "12x", пустая строка — ошибка (atof дал бы 0).
+bool parseNum(const char* s, float& out) {
+    if (!s || !*s) return false;
+    char* end = nullptr;
+    out = strtof(s, &end);
+    return end != s && *end == 0 && !isnan(out);
+}
+
+void printSim() {
+    const app::SimState s = app::simState();
+    Serial.printf(
+        "sim: wax=%.2f heater=%.2f amb=%.1f power=%.0fW melted=%.0f%% speed=x%.1f fail=%d bus=%s stuck=%d ssr=%d\n",
+        s.waxC, s.heaterC, s.ambientC, s.powerW, s.meltedPct, s.speed, s.failProc, s.hangBus ? "hang" : "ok",
+        s.stuck, app::heaterOn());
+}
+
+void simCommand(int argc, char** argv) {
+    using app::SimCmd;
+    namespace sim = app::sim;
+    const char* k = argc >= 2 ? argv[1] : "";
+    if (!*k) {
+        printSim();
+        return;
+    }
+    SimCmd c;
+    if (!strcmp(k, "reset")) {
+        c.kind = SimCmd::Reset;
+    } else if (!strcmp(k, "hang")) {
+        Serial.println("sim: control task hang -> expect WDT reset in ~5 s");
+        Serial.flush();
+        c.kind = SimCmd::Hang;
+        if (!app::simCmd(c)) Serial.println("sim: busy, retry");
+        return;
+    } else {
+        struct Key {
+            const char* name;
+            SimCmd::Kind kind;
+            float lo, hi;
+        };
+        static const Key kKeys[] = {
+            {"speed", SimCmd::Speed, sim::kSpeedMin, sim::kSpeedMax},
+            {"wax", SimCmd::Wax, sim::kTempMinC, sim::kTempMaxC},
+            {"heater", SimCmd::Heater, sim::kTempMinC, sim::kTempMaxC},
+            {"amb", SimCmd::Amb, sim::kTempMinC, sim::kTempMaxC},
+            {"power", SimCmd::Power, 0.0f, sim::kPowerMaxW},
+            {"fail", SimCmd::Fail, 0.0f, 1.0f},
+            {"bus", SimCmd::Bus, 0.0f, 1.0f},
+            {"stuck", SimCmd::Stuck, 0.0f, 1.0f},
+        };
+        const Key* key = nullptr;
+        for (const Key& x : kKeys)
+            if (!strcmp(k, x.name)) key = &x;
+        if (!key) {
+            Serial.println("sim: unknown key (help)");
+            return;
+        }
+        float v;
+        if (argc < 3 || !parseNum(argv[2], v)) {
+            Serial.println("sim: bad value");
+            return;
+        }
+        if (v < key->lo || v > key->hi) {
+            Serial.printf("sim: %s out of range %g..%g\n", key->name, key->lo, key->hi);
+            return;
+        }
+        c.kind = key->kind;
+        c.v = v;
+    }
+    if (!app::simCmd(c)) {
+        Serial.println("sim: busy, retry");
+        return;
+    }
+    delay(20);  // команду применяет control task (период 5 мс) — ждём, чтобы показать новое состояние
+    printSim();
+}
+#endif
 
 void exec(char* line) {
     char* argv[6] = {};
@@ -125,20 +207,7 @@ void exec(char* line) {
     else if (!strcmp(c, "reboot")) { app::stop(); delay(100); hal::reboot(); }
     else if (!strcmp(c, "factory")) app::factoryReset();
 #if SIM_SENSORS
-    else if (!strcmp(c, "sim")) {
-        TempSensors& m = simSensors();
-        const char* k = argc >= 2 ? argv[1] : "";
-        const float v = argc >= 3 ? atof(argv[2]) : 0;
-        if (argc >= 3 && !strcmp(k, "speed")) m.speed = constrain(v, 0.1f, 100.0f);
-        else if (argc >= 3 && !strcmp(k, "wax")) m.waxC = v;
-        else if (argc >= 3 && !strcmp(k, "heater")) m.heaterC = v;
-        else if (argc >= 3 && !strcmp(k, "amb")) m.ambient = v;
-        else if (argc >= 3 && !strcmp(k, "power")) m.powerW = v;
-        else if (argc >= 3 && !strcmp(k, "fail")) m.failProc = v != 0;
-        else if (!strcmp(k, "reset")) m.reset();
-        Serial.printf("sim: wax=%.2f heater=%.2f amb=%.1f power=%.0fW melted=%.0f%% speed=x%.1f fail=%d ssr=%d\n", m.waxC,
-                      m.heaterC, m.ambient, m.powerW, 100 * m.melted / m.latentJ, m.speed, m.failProc, app::heaterOn());
-    }
+    else if (!strcmp(c, "sim")) simCommand(argc, argv);
 #endif
     else Serial.println("? (help)");
 }

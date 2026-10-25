@@ -43,4 +43,28 @@ void factoryReset();
 
 const char* deviceId();  // "a1b2c3d4"
 
+#if SIM_SENSORS
+// --- Симулятор (только sim-сборка). Команды применяет control task,
+// поэтому модель меняется без гонок с циклом управления.
+namespace sim {
+constexpr float kSpeedMin = 0.1f, kSpeedMax = 100.0f;
+constexpr float kTempMinC = -20.0f, kTempMaxC = 150.0f;
+constexpr float kPowerMaxW = 3000.0f;
+}  // namespace sim
+
+struct SimCmd {
+    enum Kind : uint8_t { None, Speed, Wax, Heater, Amb, Power, Fail, Bus, Stuck, Reset, Hang };
+    Kind kind = None;
+    float v = 0;
+};
+
+struct SimState {
+    float waxC = 0, heaterC = 0, ambientC = 0, powerW = 0, meltedPct = 0, speed = 1;
+    bool failProc = false, hangBus = false, stuck = false;
+};
+
+bool simCmd(const SimCmd& c);  // false — предыдущая команда ещё не применена
+SimState simState();           // снимок модели на последнем такте управления
+#endif
+
 }  // namespace app
