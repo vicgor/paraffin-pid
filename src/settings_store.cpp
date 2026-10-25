@@ -21,6 +21,15 @@ struct Blob {
     uint32_t crc;
 };
 
+// Один буфер на все операции: структура ~700 байт, на стеке обработчиков
+// веба/CLI ей не место (#4). Доступ — только под g_storeLock: save() может
+// прийти одновременно из веба, CLI и MQTT, и без замка во flash уйдёт
+// смесь двух конфигураций или неверная CRC (#3).
+// ВАЖНО: не вызывать из цикла управления — запись во flash и ожидание мьютекса
+// нарушили бы детерминизм и могли бы уронить watchdog.
+hal::Mutex g_storeLock;
+Blob g_blob;
+
 uint32_t crc32(const uint8_t* d, size_t n) {
     uint32_t c = 0xFFFFFFFF;
     while (n--) {
@@ -66,7 +75,8 @@ bool writeBlob(const Blob& b) {
 namespace settings_store {
 
 bool load(AppSettings& s) {
-    static Blob b;  // не на стеке — структура ~700 байт
+    hal::LockGuard lk(g_storeLock);
+    Blob& b = g_blob;
     memset((void*)&b, 0, sizeof(b));
     if (readBlob(b) && b.magic == kMagic && b.version == kVersion && b.size == sizeof(AppSettings) &&
         b.crc == blobCrc(b)) {
@@ -79,7 +89,8 @@ bool load(AppSettings& s) {
 }
 
 bool save(const AppSettings& s) {
-    static Blob b;
+    hal::LockGuard lk(g_storeLock);
+    Blob& b = g_blob;
     memset((void*)&b, 0, sizeof(b));  // обнуляем padding, чтобы CRC была детерминированной
     b.magic = kMagic;
     b.version = kVersion;
@@ -90,6 +101,7 @@ bool save(const AppSettings& s) {
 }
 
 void factoryReset() {
+    hal::LockGuard lk(g_storeLock);
 #if PLATFORM_ESP32
     Preferences p;
     if (p.begin("paraffin", false)) {
@@ -97,9 +109,9 @@ void factoryReset() {
         p.end();
     }
 #else
-    Blob b;
-    memset((void*)&b, 0xFF, sizeof(b));
-    writeBlob(b);
+    // 0xFF — «стёртая» flash: magic не совпадёт, load() вернёт умолчания
+    memset((void*)&g_blob, 0xFF, sizeof(g_blob));
+    writeBlob(g_blob);
 #endif
 }
 
