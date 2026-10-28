@@ -17,35 +17,31 @@
 
 ```mermaid
 stateDiagram-v2
-    [*] --> STOP: Инициализация Controller
+    direction TB
 
-    STOP --> HEAT: start
-    STOP --> TUNE: tune [procValid]
-    STOP --> FAULT: Авария Safety / raiseFault
+    state "Рабочие режимы" as Operational {
+        [*] --> STOP
 
-    HEAT --> STOP: stop
-    HEAT --> TUNE: tune [procValid]
-    HEAT --> FAULT: Авария Safety / raiseFault
+        STOP --> HEAT: start
+        HEAT --> STOP: stop
 
-    TUNE --> STOP: stop
-    TUNE --> HEAT: start / прервать Autotune
-    TUNE --> HEAT: Autotune завершён / применить коэффициенты
-    TUNE --> FAULT: Авария Safety / ошибка Autotune / raiseFault
+        STOP --> TUNE: tune
+        HEAT --> TUNE: tune
+        TUNE --> STOP: stop
+        TUNE --> HEAT: start или успешный Autotune
+    }
 
-    FAULT --> STOP: ack [текущая проверка Safety успешна]
-
-    note right of HEAT
-        Достижение цели не завершает HEAT.
-        При недостоверной температуре ванны
-        выход равен нулю.
-    end note
-
-    note right of FAULT
-        start и tune отклоняются.
-        stop не снимает аварию.
-        Неуспешный ack сохраняет FAULT.
-    end note
+    [*] --> Operational
+    Operational --> FAULT: Авария Safety / raiseFault
+    TUNE --> FAULT: Ошибка Autotune
+    FAULT --> Operational: ack — проверка успешна
 ```
+
+«Рабочие режимы» — визуальная группа, а не дополнительное значение Mode. Вход в группу означает STOP, в том числе после успешного ack.
+
+Переход по tune допускается только при procValid=true. В TUNE команда start прерывает Autotune, а успешное завершение Autotune применяет новые коэффициенты; оба события переводят регулятор в HEAT.
+
+В FAULT команды start и tune отклоняются, stop не снимает аварию. Неуспешный ack оставляет FAULT. Достижение целевой температуры не завершает HEAT.
 
 Диаграмма показывает автомат Controller. Поведение приложения при
 перезагрузке, включая watchdog и autoResume, описано отдельно ниже.
