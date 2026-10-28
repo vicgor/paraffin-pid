@@ -49,20 +49,48 @@ flowchart TB
 ## Роли датчиков
 
 ```mermaid
-flowchart LR
-    Target["Уставка ванны"] --> Ramp["Рампа"]
-    Ramp --> PID["ПИД ванны"]
-    PV["Датчик ванны: procC / pv"] --> PID
-    PV --> Tune["Autotune"]
-    Target --> Tune
-    PV --> Safety["Safety"]
-    Heater["Датчик нагревателя: heaterC / heater"] --> Safety
-    PID --> Mode["Выбор выхода по режиму"]
-    Tune --> Mode
-    Safety -->|Авария| Fault["FAULT: выход 0"]
-    Fault --> Mode
-    Mode --> SSR["SSR"]
+flowchart TB
+    Target["Уставка ванны"]
+    PV["Датчик ванны<br/>procC / pv"]
+    Heater["Датчик нагревателя<br/>heaterC / heater"]
+
+    subgraph Regulation["Регулирование"]
+        Ramp["Рампа уставки<br/>rampCpm / rampHoldC"]
+        PID["ПИД ванны"]
+        Tune["Autotune"]
+
+        Target --> Ramp
+        PV --> Ramp
+        Ramp --> PID
+        PV --> PID
+
+        Target --> Tune
+        PV --> Tune
+    end
+
+    subgraph Protection["Защиты"]
+        Safety["Safety<br/>датчики, перегрев, NO RISE, SSR STUCK"]
+        Fault["Фиксация аварии<br/>режим FAULT"]
+
+        Safety -->|Авария| Fault
+    end
+
+    PV --> Safety
+    Heater --> Safety
+
+    Context["Режим, уставка<br/>предыдущий выход регулятора"]
+    Context --> Safety
+
+    Output["Выбор итоговой мощности<br/>HEAT: PID; TUNE: Autotune<br/>STOP / FAULT: 0"]
+
+    PID --> Output
+    Tune --> Output
+    Fault --> Output
+
+    Output --> SSR["SsrOutput<br/>оконное управление SSR"]
 ```
+
+Схема показывает зависимости данных, а не порядок вызовов. Недостоверное измерение температуры ванны также обнуляет выход в HEAT и TUNE, даже до фиксации аварии SENSOR. Проверки имеют собственные условия и выдержки времени; подробности — в таблице защит ниже.
 
 Датчик ванны — обратная связь ПИД и Autotune. Датчик нагревателя не входит непосредственно в расчёт ПИД: каскадное регулирование и плавный ограничитель мощности по его температуре пока не реализованы. Показания двух датчиков не усредняются.
 
