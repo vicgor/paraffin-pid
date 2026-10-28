@@ -12,21 +12,29 @@ flowchart TB
         Clients["UI, USB CLI, HTTP, MQTT"]
         Store["Отложенное сохранение настроек во flash"]
     end
+
     API["app.* — команды и снимки состояния"]
     Sync["hal::Mutex и обработка запросов"]
+
     Clients <--> API
     API <--> Sync
     API --> Store
+
     subgraph Control["Контур управления — период 5 мс"]
+        Tick["controlTick"]
         Sensors["TempSensors.tick"]
         Controller["Controller.step при новом измерении"]
         Timeout["Контроль отсутствия измерений"]
         SSR["SsrOutput — обновление выхода"]
         WDT["Обслуживание watchdog"]
+
+        Tick -. "Каждый вызов" .-> WDT
+        Tick --> Sensors
         Sensors --> Controller
         Timeout --> Controller
         Controller --> SSR
     end
+
     Sync <--> Controller
     Sync -. "Запросы swap / rescan" .-> Sensors
 ```
