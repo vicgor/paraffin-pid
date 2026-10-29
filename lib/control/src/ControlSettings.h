@@ -4,6 +4,13 @@
 
 namespace ctl {
 
+// Верхние пределы НАСТРОЙКИ аварийных температур (значения по умолчанию ниже не меняются).
+// Датчик DS18B20 физически не работает выше 125 °C (чтение отвергается в sensors.cpp),
+// поэтому пределы выше 125 °C имеют смысл только с высокотемпературным датчиком (PT100)
+// и обязательным аппаратным NC-термовыключателем KSD301/KSD9700 последовательно с ТЭНом.
+constexpr float kMaxProcessLimitC = 150.0f;
+constexpr float kMaxHeaterLimitC = 200.0f;
+
 struct ControlSettings {
     // Уставка
     float targetC = 70.0f;     // целевая температура парафина
@@ -28,7 +35,7 @@ struct ControlSettings {
 
     // Защиты
     float maxProcessC = 105.0f;  // аварийная T парафина (всегда активна)
-    float maxHeaterC = 120.0f;   // аварийная T на ТЭНе (DS18B20 ≤ 125 °C!)
+    float maxHeaterC = 120.0f;   // аварийная T на ТЭНе (DS18B20 ≤ 125 °C! выше — только с PT100)
     uint8_t heaterSensorRequired = 0;  // 1 — без датчика ТЭНа работа запрещена
     float runawayWindowMin = 30.0f;    // окно проверки «нагрев есть, роста нет» (0 — выкл.)
     float runawayMinRiseC = 1.0f;

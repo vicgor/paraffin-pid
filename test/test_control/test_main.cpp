@@ -257,13 +257,57 @@ void test_fault_ssr_stuck() {
 void test_sanitize() {
     ControlSettings s;
     s.targetC = 300;
-    s.maxProcessC = 200;
+    s.maxProcessC = 300;
+    s.maxHeaterC = 350;
     s.kp = NAN;
     TEST_ASSERT_TRUE(sanitize(s));
-    TEST_ASSERT_TRUE(s.maxProcessC <= 125);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, kMaxProcessLimitC, s.maxProcessC);  // потолок 150 °C
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, kMaxHeaterLimitC, s.maxHeaterC);    // потолок 200 °C
     TEST_ASSERT_TRUE(s.targetC <= s.spMaxC);
     TEST_ASSERT_TRUE(s.spMaxC < s.maxProcessC);
     TEST_ASSERT_FALSE(isnan(s.kp));
+
+    // Значения по умолчанию не должны измениться и не должны поправляться
+    ControlSettings d;
+    TEST_ASSERT_FALSE(sanitize(d));
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 105.0f, d.maxProcessC);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 120.0f, d.maxHeaterC);
+
+    // Нижняя граница и NaN/Inf в аварийных пределах → по умолчанию
+    ControlSettings n;
+    n.maxProcessC = INFINITY;
+    n.maxHeaterC = NAN;
+    sanitize(n);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 105.0f, n.maxProcessC);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 120.0f, n.maxHeaterC);
+    n.maxHeaterC = 5;
+    sanitize(n);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 30.0f, n.maxHeaterC);
+}
+
+void test_heater_limit_above_ds18b20() {
+    // Порог ТЭНа выше 125 °C (для PT100) должен сохраняться и срабатывать как HTR HOT
+    ControlSettings s;
+    s.maxHeaterC = 175;
+    TEST_ASSERT_FALSE(sanitize(s));
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 175.0f, s.maxHeaterC);
+
+    Controller c;
+    uint32_t t = 0;
+    c.begin(s, t);
+    Measurement m;
+    m.procValid = true;
+    m.procC = 70;
+    m.heaterPresent = true;
+    m.heaterValid = true;
+    m.heaterC = 170;  // ниже порога — аварии нет
+    c.step(m, t += 1000);
+    TEST_ASSERT_EQUAL(Fault::None, c.status().fault);
+    m.heaterC = 176;  // выше порога
+    c.step(m, t += 1000);
+    TEST_ASSERT_EQUAL(Mode::Fault, c.status().mode);
+    TEST_ASSERT_EQUAL(Fault::OverTempHeater, c.status().fault);
+    TEST_ASSERT_EQUAL_FLOAT(0, c.output());
 }
 
 void setUp() {}
@@ -276,6 +320,7 @@ int main() {
     RUN_TEST(test_ramp);
     RUN_TEST(test_gains_rules);
     RUN_TEST(test_sanitize);
+    RUN_TEST(test_heater_limit_above_ds18b20);
     RUN_TEST(test_closed_loop_default_gains_with_melting);
     RUN_TEST(test_autotune_then_regulate);
     RUN_TEST(test_fault_overtemp_and_ack);

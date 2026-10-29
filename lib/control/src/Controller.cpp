@@ -21,8 +21,9 @@ bool sanitize(ControlSettings& s) {
     for (unsigned k = 0; k < sizeof(fs) / sizeof(fs[0]); ++k)
         if (isnan(*fs[k]) || isinf(*fs[k])) *fs[k] = *fd[k];
 
-    s.maxProcessC = clampf(s.maxProcessC, 30, 125);  // DS18B20: до 125 °C
-    s.maxHeaterC = clampf(s.maxHeaterC, 30, 125);
+    // Верхние пределы — в ControlSettings.h. DS18B20 сам по себе читается только до 125 °C.
+    s.maxProcessC = clampf(s.maxProcessC, 30, kMaxProcessLimitC);
+    s.maxHeaterC = clampf(s.maxHeaterC, 30, kMaxHeaterLimitC);
     s.spMinC = clampf(s.spMinC, 0, 100);
     s.spMaxC = clampf(s.spMaxC, s.spMinC + 1, s.maxProcessC - 2);
     s.targetC = clampf(s.targetC, s.spMinC, s.spMaxC);
