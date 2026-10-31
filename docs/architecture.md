@@ -32,8 +32,9 @@ flowchart TB
 
         Tick -. "Каждый вызов" .-> WDT
         Tick --> Sensors
+        Tick --> Timeout
         Sensors --> Controller
-        Timeout --> Controller
+        Timeout -->|"Нет измерений 5 с"| Controller
         Controller --> SSR
     end
 
@@ -62,14 +63,14 @@ flowchart TB
         PID["ПИД ванны"]
         Tune["Autotune"]
 
-        Target --> Ramp
-        PV --> Ramp
         Ramp --> PID
-        PV --> PID
-
-        Target --> Tune
-        PV --> Tune
     end
+
+    Target --> Ramp
+    PV --> Ramp
+    PV --> PID
+    Target --> Tune
+    PV --> Tune
 
     subgraph Protection["Защиты"]
         Safety["Safety<br/>датчики, перегрев, NO RISE, SSR STUCK"]
