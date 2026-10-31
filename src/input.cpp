@@ -11,17 +11,18 @@ int32_t g_encTaken = 0;
 // Таблица переходов квадратурного сигнала: устойчива к дребезгу
 const int8_t kQuad[16] = {0, -1, 1, 0, 1, 0, 0, -1, -1, 0, 0, 1, 0, 1, -1, 0};
 
+#if PIN_ENC_A >= 0 && PIN_ENC_B >= 0
 void ISR_ATTR encIsr() {
     const uint8_t s = (digitalRead(PIN_ENC_A) << 1) | digitalRead(PIN_ENC_B);
     g_encState = ((g_encState << 2) | s) & 0x0F;
     g_encCount += kQuad[g_encState];
 }
-
-constexpr uint32_t kDebounceMs = 30;
-constexpr uint32_t kLongMs = 1200;
+#endif
 }  // namespace
 
 void InputDevice::begin() {
+    buttons_ = {};
+    backPending_ = false;
 #if PIN_ENC_A >= 0 && PIN_ENC_B >= 0
     pinMode(PIN_ENC_A, INPUT_PULLUP);
     pinMode(PIN_ENC_B, INPUT_PULLUP);
@@ -31,6 +32,12 @@ void InputDevice::begin() {
 #endif
 #if PIN_ENC_BTN >= 0
     pinMode(PIN_ENC_BTN, INPUT_PULLUP);
+#endif
+#if PIN_BTN_OK >= 0
+    pinMode(PIN_BTN_OK, INPUT_PULLUP);
+#endif
+#if PIN_BTN_BACK >= 0
+    pinMode(PIN_BTN_BACK, INPUT_PULLUP);
 #endif
 #if defined(PIN_BTN_UP) && defined(PIN_BTN_DOWN)
     pinMode(PIN_BTN_UP, INPUT_PULLUP);
@@ -65,7 +72,7 @@ ButtonEvent InputDevice::poll(uint32_t nowMs) {
                 btnDelta_ += dir;
             } else if (nowMs - t0 > 500) {
                 btnDelta_ += dir;
-                t0 = nowMs - 400;  // далее каждые 100 мс
+                t0 = nowMs - 400;
             }
         } else {
             t0 = 0;
@@ -74,25 +81,21 @@ ButtonEvent InputDevice::poll(uint32_t nowMs) {
     rep(PIN_BTN_UP, repUp_, +1);
     rep(PIN_BTN_DOWN, repDn_, -1);
 #endif
+    uint8_t mask = 0;
 #if PIN_ENC_BTN >= 0
-    const bool raw = digitalRead(PIN_ENC_BTN) == LOW;
-    if (raw != raw_) {
-        raw_ = raw;
-        changeMs_ = nowMs;
-    }
-    if (nowMs - changeMs_ < kDebounceMs) return ButtonEvent::None;
-    if (raw && !pressed_) {
-        pressed_ = true;
-        longSent_ = false;
-        pressMs_ = nowMs;
-    } else if (raw && pressed_ && !longSent_ && nowMs - pressMs_ >= kLongMs) {
-        longSent_ = true;
-        return ButtonEvent::Long;
-    } else if (!raw && pressed_) {
-        pressed_ = false;
-        if (!longSent_) return ButtonEvent::Click;
-    }
+    if (digitalRead(PIN_ENC_BTN) == LOW) mask |= uiinput::Buttons::kEncoder;
 #endif
-    (void)nowMs;
-    return ButtonEvent::None;
+#if PIN_BTN_OK >= 0
+    if (digitalRead(PIN_BTN_OK) == LOW) mask |= uiinput::Buttons::kConfirm;
+#endif
+#if PIN_BTN_BACK >= 0
+    if (digitalRead(PIN_BTN_BACK) == LOW) mask |= uiinput::Buttons::kBack;
+#endif
+    const ButtonEvent event = buttons_.poll(mask, nowMs);
+    // BACK доставляется отдельно: старый обработчик OK не должен принять его за запуск.
+    if (event == ButtonEvent::Back) {
+        backPending_ = true;
+        return ButtonEvent::None;
+    }
+    return event;
 }

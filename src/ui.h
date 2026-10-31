@@ -13,6 +13,12 @@ public:
     void begin(Display* d, InputDevice* in);
     void tick(uint32_t nowMs);
     void toast(const char* msg, uint32_t ms = 1500);
+    void back(uint32_t nowMs) {
+        // Отдельная навигация: не вызывает start/ack и не сохраняет editVal_.
+        screen_ = uiinput::backScreen(screen_);
+        lastInputMs_ = nowMs;
+        dirty_ = true;
+    }
 
 private:
     enum class Screen : uint8_t { Main, Menu, Edit, Sensors, Network };

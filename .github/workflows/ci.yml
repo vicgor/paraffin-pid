@@ -58,6 +58,9 @@ jobs:
           - pico2w-tft096
           - pico2w-tft
           - pico2-lcd096
+          - esp32s3-sh1106-ec11
+          - pico2-sh1106-ec11
+          - pico2w-sh1106-ec11
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
