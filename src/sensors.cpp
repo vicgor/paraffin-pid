@@ -1,4 +1,5 @@
 #include "sensors.h"
+#if !SIM_SENSORS
 
 #include <math.h>
 
@@ -129,3 +130,4 @@ void TempSensors::tick(uint32_t nowMs) {
     }
     new_ = true;
 }
+#endif  // !SIM_SENSORS

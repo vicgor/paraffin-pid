@@ -7,6 +7,12 @@
 
 namespace {
 
+#if SIM_SENSORS
+constexpr bool kSimSensors = true;
+#else
+constexpr bool kSimSensors = false;
+#endif
+
 hal::Mutex g_lock;
 ctl::Controller g_ctl;
 TempSensors g_sensors(PIN_ONEWIRE);
@@ -24,6 +30,52 @@ bool g_savePending = false;
 char g_id[9];
 
 uint32_t g_lastMeasMs = 0;
+
+#if SIM_SENSORS
+app::SimCmd g_simCmd;      // под g_lock: одна ожидающая команда из loop()
+app::SimState g_simState;  // под g_lock: снимок модели для CLI/веба
+
+// Вызывается только из control task — модель меняет тот же поток, что её считает.
+void simApply(const app::SimCmd& c) {
+    using app::SimCmd;
+    namespace sim = app::sim;
+    // повторный clamp: CLI уже проверил, но control task не доверяет входу
+    auto clampf = [](float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); };
+    switch (c.kind) {
+        case SimCmd::Speed: g_sensors.speed = clampf(c.v, sim::kSpeedMin, sim::kSpeedMax); break;
+        case SimCmd::Wax: g_sensors.waxC = clampf(c.v, sim::kTempMinC, sim::kTempMaxC); break;
+        case SimCmd::Heater: g_sensors.heaterC = clampf(c.v, sim::kTempMinC, sim::kTempMaxC); break;
+        case SimCmd::Amb: g_sensors.ambient = clampf(c.v, sim::kTempMinC, sim::kTempMaxC); break;
+        case SimCmd::Power: g_sensors.powerW = clampf(c.v, 0.0f, sim::kPowerMaxW); break;
+        case SimCmd::Fail: g_sensors.failProc = c.v != 0; break;
+        case SimCmd::Bus: g_sensors.hangBus = c.v != 0; break;
+        case SimCmd::Stuck: g_sensors.stuck = c.v != 0; break;
+        case SimCmd::Reset: g_sensors.reset(); break;
+        case SimCmd::Hang: {
+            // Зависание «как в жизни»: без watchdogFeed и без обновления SSR —
+            // выход остаётся в последнем состоянии до сброса по WDT.
+            // volatile — чтобы компилятор не выкинул пустой бесконечный цикл (UB в C++).
+            static volatile bool hang = true;
+            while (hang) {}
+            break;
+        }
+        case SimCmd::None: break;
+    }
+}
+
+// Вызывается под g_lock.
+void simSnapshot() {
+    g_simState.waxC = g_sensors.waxC;
+    g_simState.heaterC = g_sensors.heaterC;
+    g_simState.ambientC = g_sensors.ambient;
+    g_simState.powerW = g_sensors.powerW;
+    g_simState.meltedPct = g_sensors.meltedPct();
+    g_simState.speed = g_sensors.speed;
+    g_simState.failProc = g_sensors.failProc;
+    g_simState.hangBus = g_sensors.hangBus;
+    g_simState.stuck = g_sensors.stuck;
+}
+#endif
 
 // ------------------------------------------------- цикл управления (высокий приоритет)
 void controlTick() {
@@ -44,6 +96,18 @@ void controlTick() {
         g_rescanReq = false;
         g_sensors.rescan();
     }
+#if SIM_SENSORS
+    {
+        app::SimCmd c;
+        {
+            hal::LockGuard lk(g_lock);
+            c = g_simCmd;
+            g_simCmd = app::SimCmd{};
+        }
+        simApply(c);  // вне замка: sim hang не должен блокировать loop()
+    }
+    g_sensors.setHeater(g_ssrOn);
+#endif
     g_sensors.tick(now);
 
     float duty;
@@ -74,6 +138,9 @@ void controlTick() {
         const ctl::Mode mode = g_ctl.status().mode;
         duty = (mode == ctl::Mode::Run || mode == ctl::Mode::Tune) ? g_ctl.output() : 0;
         window = g_ctl.settings().ssrWindowMs;
+#if SIM_SENSORS
+        simSnapshot();
+#endif
     }
     g_ssr.setWindow(window);
     g_ssr.setDuty(duty);
@@ -88,8 +155,10 @@ namespace app {
 const char* deviceId() { return g_id; }
 
 void begin() {
-    // Первым делом — гарантированно выключить нагрев
-    g_ssr.begin(PIN_SSR, SSR_ACTIVE_HIGH);
+    // Первым делом — гарантированно выключить нагрев.
+    // В sim-сборке выход SSR только логический: пин не активируется никогда.
+    g_ssr.begin(PIN_SSR, SSR_ACTIVE_HIGH, kSimSensors);
+    if (kSimSensors) Serial.println("[sim] SIM_SENSORS: SSR pin disabled (dry run)");
     snprintf(g_id, sizeof(g_id), "%08lx", (unsigned long)hal::chipId());
 
     const bool loaded = settings_store::load(g_cfg);
@@ -217,5 +286,19 @@ void factoryReset() {
     delay(100);
     hal::reboot();
 }
+
+#if SIM_SENSORS
+bool simCmd(const SimCmd& c) {
+    hal::LockGuard lk(g_lock);
+    if (g_simCmd.kind != SimCmd::None) return false;
+    g_simCmd = c;
+    return true;
+}
+
+SimState simState() {
+    hal::LockGuard lk(g_lock);
+    return g_simState;
+}
+#endif
 
 }  // namespace app
