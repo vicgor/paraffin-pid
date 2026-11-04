@@ -223,6 +223,80 @@ test/test_control/    тесты на модели объекта с плавл�
 `loop()`, на RP2350 — второе ядро), поэтому зависание веба или переподключение MQTT не
 влияют на управление нагревом. Этот же контекст кормит сторожевой таймер (5 с).
 
+### Схема потоков
+
+Контур управления и `loop()` работают раздельно. Общее состояние меняется только под
+`g_lock` через API `app.*`, а запросы `swap`/`rescan` передаются флагами.
+
+```mermaid
+flowchart TB
+    subgraph CTL["Контур управления · каждые 5 мс"]
+        direction LR
+        WDT["watchdogFeed()"] --> REQ["флаги<br/>swap / rescan"]
+        REQ --> SENS["TempSensors::tick<br/>DS18B20, 12 бит, 1 с"]
+        SENS --> STEP["Controller::step<br/>Safety → Ramp →<br/>PID / Autotune"]
+        STEP --> GUARD{"нет измерений<br/>больше 5 с?"}
+        GUARD -- да --> FAULT["авария SENSOR<br/>duty = 0"]
+        GUARD -- нет --> SSR["SsrOutput<br/>окно 2 с,<br/>мин. импульс 20 мс"]
+        FAULT --> SSR
+    end
+
+    SSR --> PIN["Пин SSR → ТЭН<br/>+ NC-термовыключатель"]
+    STEP <--> STATE[("g_lock<br/>Controller, Measurement,<br/>события, настройки")]
+    STATE <--> API["API app.*<br/>status / start / stop / ack /<br/>settings"]
+
+    subgraph LOOP["loop() · фоновые задачи"]
+        direction LR
+        EV["takeEvents()<br/>зуммер, toast"] --> HIST["History"]
+        HIST --> UI["Ui<br/>дисплей, энкодер"]
+        UI --> NET["net<br/>веб, MQTT, mDNS, Wi-Fi"]
+        NET --> CLI["cli<br/>Serial 115200"]
+        CLI --> SAVE["app::loopTick<br/>сохранение через 3 с"]
+    end
+
+    API <--> LOOP
+    SAVE --> FLASH[("Flash<br/>NVS / EEPROM")]
+```
+
+#### Размещение по ядрам
+
+```mermaid
+flowchart LR
+    subgraph RP["RP2350 · arduino-pico, 2 ядра"]
+        direction TB
+        RPLOOP["Core 0<br/>setup() / loop()<br/>USB CDC, CYW43 на pico2w"]
+        RPCTL["Core 1<br/>setup1() ждёт старта<br/>loop1(): тик каждые 5 мс"]
+        RPWDT["аппаратный WDT 5 с<br/>кормит только core 1"]
+        RPLOOP <-- "pico mutex_t" --> RPCTL
+        RPWDT -.-> RPCTL
+    end
+
+    subgraph C6["ESP32-C6 · FreeRTOS, 1 ядро (планируется)"]
+        direction TB
+        C6WIFI["Core 0 · Wi-Fi<br/>приоритет 23"]
+        C6CTL["Core 0 · control<br/>приоритет 5"]
+        C6LOOP["Core 0 · loop()<br/>приоритет 1"]
+        C6WIFI -. "вытесняет:<br/>джиттер тика" .-> C6CTL
+        C6CTL <-- mutex --> C6LOOP
+    end
+
+    subgraph S3["ESP32-S3 · FreeRTOS, 2 ядра"]
+        direction TB
+        S3WIFI["Core 0<br/>Wi-Fi / lwIP<br/>приоритет 18–23"]
+        S3CTL["Core 1 · control<br/>приоритет 5<br/>vTaskDelayUntil 5 мс"]
+        S3LOOP["Core 1 · loopTask<br/>loop(), приоритет 1"]
+        S3TWDT["TWDT 5 с<br/>только задача control"]
+        S3CTL <-- "mutex с наследованием<br/>приоритета" --> S3LOOP
+        S3TWDT -.-> S3CTL
+    end
+```
+
+- WDT следит только за контуром управления. Если зависнет `loop()` или сеть, сброса не будет,
+  а нагрев продолжит регулироваться.
+- Пока настройки пишутся во flash, контур замирает на десятки мс (на ESP32 отключается кэш,
+  на RP2350 срабатывает `idleOtherCore`). SSR в это время держит текущее состояние.
+- На ESP32-C6 контур делит ядро с Wi-Fi, поэтому джиттер тика больше, чем на S3.
+
 ## Лицензия
 
 [MIT](LICENSE). Прошивка управляет нагревателем и поставляется «как есть», без гарантий:
