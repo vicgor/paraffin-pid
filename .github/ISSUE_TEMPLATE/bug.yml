@@ -1,0 +1,27 @@
+name: Ошибка
+description: Что-то работает неправильно
+labels: [bug]
+body:
+  - type: input
+    id: env
+    attributes:
+      label: Окружение PlatformIO
+      placeholder: esp32s3-sh1106-spi
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: Что произошло и что ожидалось
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги воспроизведения и логи
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Безопасность
+      options:
+        - label: Проблема влияет на управление нагревом или аварийное отключение

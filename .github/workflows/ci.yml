@@ -7,11 +7,6 @@ on:
     branches: [main]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths-ignore:
-      - "**.md"
-      - "docs/**"
-      - "hwtest/**"
-      - "max31865-selftest/**"
   workflow_dispatch:
 
 concurrency:
@@ -55,6 +50,7 @@ jobs:
           - esp32s3-tft096
           - esp32s3-tft
           - esp32s3-ili9341
+          - esp32s3-sh1106-sim
           - pico2-oled
           - pico2-tft096
           - pico2-tft
@@ -94,3 +90,14 @@ jobs:
             .pio/build/${{ matrix.env }}/partitions.bin
           if-no-files-found: error
           retention-days: 30
+
+  ci-ok:
+    name: CI OK
+    timeout-minutes: 2
+    needs: [test, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          [ "${{ needs.test.result }}" = "success" ] && \
+          { [ "${{ needs.build.result }}" = "success" ] || [ "${{ needs.build.result }}" = "skipped" ]; }

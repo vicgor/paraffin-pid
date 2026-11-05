@@ -5,9 +5,12 @@
 
 class SsrOutput {
 public:
-    void begin(int pin, bool activeHigh) {
+    // dryRun: логика ШИМ работает (isOn() для симулятора), но пин всегда
+    // в неактивном уровне — sim-прошивка не может включить настоящий ТЭН.
+    void begin(int pin, bool activeHigh, bool dryRun = false) {
         pin_ = pin;
         activeHigh_ = activeHigh;
+        dryRun_ = dryRun;
         if (pin_ < 0) return;
         write(false);
         pinMode(pin_, OUTPUT);
@@ -46,16 +49,19 @@ public:
     }
     bool isOn() const { return on_; }
     float duty() const { return duty_; }
+    bool dryRun() const { return dryRun_; }
 
 private:
     static constexpr uint32_t kMinPulseMs = 20;
     void write(bool on) {
         on_ = on;
-        if (pin_ >= 0) digitalWrite(pin_, (on == activeHigh_) ? HIGH : LOW);
+        const bool level = on && !dryRun_;  // в dry run пин никогда не активен
+        if (pin_ >= 0) digitalWrite(pin_, (level == activeHigh_) ? HIGH : LOW);
     }
 
     int pin_ = -1;
     bool activeHigh_ = true;
+    bool dryRun_ = false;
     uint16_t windowMs_ = 2000;
     uint32_t winStart_ = 0;
     float duty_ = 0, pending_ = 0;

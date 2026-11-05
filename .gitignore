@@ -1,3 +1,15 @@
 .pio/
 .vscode/
 *.bin
+
+# секреты и локальные настройки
+.env
+.env.*
+!.env.example
+secrets.h
+*_secret*.h
+*.pem
+*.key
+
+# macOS
+.DS_Store
