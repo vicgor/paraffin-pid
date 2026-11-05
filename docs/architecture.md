@@ -52,6 +52,36 @@ flowchart TB
 
 Источники: [main.cpp](../src/main.cpp), [app.cpp](../src/app.cpp), [hal.cpp](../src/hal.cpp), [sensors.cpp](../src/sensors.cpp).
 
+## Размещение по ядрам
+
+```mermaid
+flowchart LR
+    subgraph RP["RP2350 · arduino-pico, 2 ядра"]
+        direction TB
+        RPLOOP["Core 0<br/>setup() / loop()<br/>USB CDC, CYW43 на pico2w"]
+        RPCTL["Core 1<br/>setup1() ждёт старта<br/>loop1(): тик каждые 5 мс"]
+        RPWDT["Аппаратный WDT 5 с<br/>кормит только core 1"]
+        RPLOOP <-->|"pico mutex_t"| RPCTL
+        RPWDT -.-> RPCTL
+    end
+
+    subgraph S3["ESP32-S3 · FreeRTOS, 2 ядра"]
+        direction TB
+        S3WIFI["Core 0<br/>Wi-Fi / lwIP<br/>приоритеты по умолчанию ESP-IDF"]
+        S3CTL["Core 1 · задача control<br/>приоритет 5<br/>vTaskDelayUntil 5 мс"]
+        S3LOOP["Core 1 · loopTask<br/>loop(), приоритет 1"]
+        S3TWDT["TWDT 5 с<br/>подписана только задача control"]
+        S3CTL <-->|"FreeRTOS mutex"| S3LOOP
+        S3TWDT -.-> S3CTL
+    end
+```
+
+- RP2350: период в `loop1()` выдерживается опросом `millis()` с `delay(1)`, поэтому возможен джиттер около 1 мс.
+- ESP32-S3: задача control закреплена за `ARDUINO_RUNNING_CORE` (ядро 1) и вытесняет `loop()` за счёт более высокого приоритета; мьютекс FreeRTOS наследует приоритет.
+- ESP32-C6 пока не поддерживается: окружений сборки нет.
+
+Источники: [hal.cpp](../src/hal.cpp), [app.cpp](../src/app.cpp).
+
 ## Роли датчиков
 
 ```mermaid
