@@ -5,10 +5,8 @@
 #include "hal.h"
 #include "net/net.h"
 #include "settings_fields.h"
-#if SIM_SENSORS
 #include <math.h>
 #include <stdlib.h>
-#endif
 
 namespace {
 char g_line[160];
@@ -65,14 +63,15 @@ void copyArg(char* dst, size_t n, const char* src) {
     dst[n - 1] = 0;
 }
 
-#if SIM_SENSORS
-// Строгий разбор числа: "abc", "12x", пустая строка — ошибка (atof дал бы 0).
+// Строгий разбор числа: "abc", "12x", пустая строка, nan, inf — ошибка (atof дал бы 0 или NaN).
 bool parseNum(const char* s, float& out) {
     if (!s || !*s) return false;
     char* end = nullptr;
     out = strtof(s, &end);
-    return end != s && *end == 0 && !isnan(out);
+    return end != s && *end == 0 && isfinite(out);
 }
+
+#if SIM_SENSORS
 
 void printSim() {
     const app::SimState s = app::simState();
@@ -158,19 +157,32 @@ void exec(char* line) {
     else if (!strcmp(c, "stop")) { app::stop(); Serial.println("ok"); }
     else if (!strcmp(c, "tune")) Serial.println(app::startTune() ? "autotune started" : "refused");
     else if (!strcmp(c, "ack")) Serial.println(app::ack() ? "cleared" : "fault condition still present");
-    else if (!strcmp(c, "sp") && argc >= 2) { app::setTarget(atof(argv[1])); Serial.println("ok"); }
-    else if (!strcmp(c, "pid") && argc >= 4) {
+    else if (!strcmp(c, "sp") && argc >= 2) {
+        float v;
+        if (!parseNum(argv[1], v)) { Serial.println("bad number"); return; }
+        app::setTarget(v);
+        // печатаем фактически применённую уставку (после ограничения spMinC..spMaxC)
+        Serial.printf("target = %g\n", app::controlSettings().targetC);
+    } else if (!strcmp(c, "pid") && argc >= 4) {
+        float kp, ki, kd;
+        if (!parseNum(argv[1], kp) || !parseNum(argv[2], ki) || !parseNum(argv[3], kd)) {
+            Serial.println("bad number");
+            return;
+        }
         ctl::ControlSettings cs = app::controlSettings();
-        cs.kp = atof(argv[1]);
-        cs.ki = atof(argv[2]);
-        cs.kd = atof(argv[3]);
+        cs.kp = kp;
+        cs.ki = ki;
+        cs.kd = kd;
         app::applyControlSettings(cs);
-        Serial.println("ok");
+        const ctl::ControlSettings a = app::controlSettings();
+        Serial.printf("kp = %g ki = %g kd = %g\n", a.kp, a.ki, a.kd);
     } else if (!strcmp(c, "set") && argc >= 3) {
         const FieldDef* f = findField(argv[1]);
         if (!f) { Serial.println("unknown key, see 'show'"); return; }
+        float v;
+        if (!parseNum(argv[2], v)) { Serial.println("bad number"); return; }
         ctl::ControlSettings cs = app::controlSettings();
-        fieldSet(cs, *f, atof(argv[2]));
+        fieldSet(cs, *f, v);
         app::applyControlSettings(cs);
         Serial.printf("%s = %g\n", f->key, fieldGet(app::controlSettings(), *f));
     } else if (!strcmp(c, "wifi") && argc >= 2) {

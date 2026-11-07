@@ -1,5 +1,6 @@
 #pragma once
 // Таблица полей ControlSettings: единый источник для CLI (set/show), веб-API и MQTT.
+#include <math.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -64,6 +65,8 @@ inline float fieldGet(const ctl::ControlSettings& s, const FieldDef& f) {
 
 inline void fieldSet(ctl::ControlSettings& s, const FieldDef& f, float v) {
     uint8_t* p = reinterpret_cast<uint8_t*>(&s) + f.offset;
+    // NaN/Inf: приведение к целому — UB, а float-поля всё равно заменит sanitize().
+    if (!isfinite(v)) return;
     switch (f.type) {
         case FieldType::F32: memcpy(p, &v, 4); break;
         case FieldType::U8: *p = (uint8_t)(v < 0 ? 0 : (v > 255 ? 255 : v)); break;
