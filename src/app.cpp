@@ -224,9 +224,13 @@ bool startTune() {
     hal::LockGuard lk(g_lock);
     return g_ctl.startTune(millis());
 }
-bool ack() {
+ctl::AckBlock ack() {
     hal::LockGuard lk(g_lock);
-    return g_ctl.ack(millis());
+    return g_ctl.ack(millis()) ? ctl::AckBlock::None : g_ctl.lastAckBlock();
+}
+ctl::AckBlock ackBlock() {
+    hal::LockGuard lk(g_lock);
+    return g_ctl.ackBlock(millis());
 }
 void setTarget(float c) {
     {

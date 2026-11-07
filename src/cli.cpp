@@ -157,7 +157,11 @@ void exec(char* line) {
     else if (!strcmp(c, "start")) Serial.println(app::start() ? "ok" : "refused (fault?)");
     else if (!strcmp(c, "stop")) { app::stop(); Serial.println("ok"); }
     else if (!strcmp(c, "tune")) Serial.println(app::startTune() ? "autotune started" : "refused");
-    else if (!strcmp(c, "ack")) Serial.println(app::ack() ? "cleared" : "fault condition still present");
+    else if (!strcmp(c, "ack")) {
+        const ctl::AckBlock b = app::ack();
+        if (b == ctl::AckBlock::None) Serial.println("cleared");
+        else Serial.printf("refused: %s (%s)\n", ctl::ackBlockText(b), ctl::ackBlockName(b));
+    }
     else if (!strcmp(c, "sp") && argc >= 2) { app::setTarget(atof(argv[1])); Serial.println("ok"); }
     else if (!strcmp(c, "pid") && argc >= 4) {
         ctl::ControlSettings cs = app::controlSettings();

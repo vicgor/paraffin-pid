@@ -187,8 +187,214 @@ void test_fault_overtemp_and_ack() {
     TEST_ASSERT_EQUAL_FLOAT(0, c.output());
     TEST_ASSERT_FALSE(c.start(t));
     TEST_ASSERT_FALSE(c.ack(t));  // причина ещё есть
+    TEST_ASSERT_EQUAL(AckBlock::ProcessHot, c.lastAckBlock());
     m.procC = 60;
-    c.step(m, t += 1000);
+    for (int k = 0; k < ackcfg::kValidReadings; ++k) c.step(m, t += 1000);
+    TEST_ASSERT_TRUE(c.ack(t));
+    TEST_ASSERT_EQUAL(Mode::Idle, c.status().mode);
+    TEST_ASSERT_EQUAL(Fault::None, c.status().fault);
+}
+
+// ---------------- Сброс аварии (#26) ----------------
+
+static Measurement mProc(float c) {
+    Measurement m;
+    m.procValid = true;
+    m.procC = c;
+    return m;
+}
+
+static Measurement mBoth(float proc, float heater) {
+    Measurement m = mProc(proc);
+    m.heaterPresent = true;
+    m.heaterValid = true;
+    m.heaterC = heater;
+    return m;
+}
+
+// Успешный ack: STOP, выход 0, нагрев сам не включается
+static void assertAckOk(Controller& c, const Measurement& m, uint32_t& t) {
+    TEST_ASSERT_EQUAL(AckBlock::None, c.ackBlock(t));
+    TEST_ASSERT_TRUE(c.ack(t));
+    TEST_ASSERT_EQUAL(Mode::Idle, c.status().mode);
+    TEST_ASSERT_EQUAL(Fault::None, c.status().fault);
+    TEST_ASSERT_EQUAL_FLOAT(0, c.output());
+    TEST_ASSERT_EQUAL_FLOAT(0, c.step(m, t += 1000));
+}
+
+void test_ack_sensor_needs_valid_streak() {
+    Controller c;
+    ControlSettings s;
+    uint32_t t = 0;
+    c.begin(s, t);
+    c.raiseFault(Fault::SensorProcess, t);
+    Measurement bad;  // procValid = false
+    bad.procFails = 1;
+    c.step(bad, t += 1000);
+    TEST_ASSERT_FALSE(c.ack(t));  // нет данных — раньше probe возвращал «нет аварии»
+    TEST_ASSERT_EQUAL(AckBlock::SensorProcess, c.lastAckBlock());
+    TEST_ASSERT_EQUAL(Mode::Fault, c.status().mode);
+
+    // N−1 достоверных, затем сбой — счётчик сбрасывается
+    for (int k = 0; k < ackcfg::kValidReadings - 1; ++k) c.step(mProc(40), t += 1000);
+    TEST_ASSERT_FALSE(c.ack(t));
+    c.step(bad, t += 1000);
+    for (int k = 0; k < ackcfg::kValidReadings - 1; ++k) c.step(mProc(40), t += 1000);
+    TEST_ASSERT_FALSE(c.ack(t));
+    TEST_ASSERT_EQUAL(AckBlock::SensorProcess, c.lastAckBlock());
+    c.step(mProc(40), t += 1000);
+    assertAckOk(c, mProc(40), t);
+}
+
+void test_ack_heater_sensor() {
+    Controller c;
+    ControlSettings s;
+    s.heaterSensorRequired = 1;
+    uint32_t t = 0;
+    c.begin(s, t);
+    c.raiseFault(Fault::SensorHeater, t);
+    for (int k = 0; k < 10; ++k) c.step(mProc(40), t += 1000);  // датчика ТЭНа нет
+    TEST_ASSERT_FALSE(c.ack(t));
+    TEST_ASSERT_EQUAL(AckBlock::SensorHeater, c.lastAckBlock());
+
+    Measurement m = mBoth(40, 45);
+    m.heaterValid = false;  // найден, но читается с ошибками
+    m.heaterFails = 1;
+    for (int k = 0; k < 10; ++k) c.step(m, t += 1000);
+    TEST_ASSERT_FALSE(c.ack(t));
+    TEST_ASSERT_EQUAL(AckBlock::SensorHeater, c.lastAckBlock());
+
+    for (int k = 0; k < ackcfg::kValidReadings; ++k) c.step(mBoth(40, 45), t += 1000);
+    assertAckOk(c, mBoth(40, 45), t);
+}
+
+void test_ack_overtemp_hysteresis() {
+    Controller c;
+    ControlSettings s;
+    uint32_t t = 0;
+    c.begin(s, t);
+    c.step(mProc(50), t);
+    c.start(t);
+    c.step(mProc(s.maxProcessC + 1), t += 1000);
+    TEST_ASSERT_EQUAL(Fault::OverTempProcess, c.status().fault);
+    // Чуть ниже порога, но внутри гистерезиса — отказ
+    const float inHyst = s.maxProcessC - ackcfg::kHystC + 0.5f;
+    for (int k = 0; k < 10; ++k) c.step(mProc(inHyst), t += 1000);
+    TEST_ASSERT_FALSE(c.ack(t));
+    TEST_ASSERT_EQUAL(AckBlock::ProcessHot, c.lastAckBlock());
+    const float cool = s.maxProcessC - ackcfg::kHystC - 0.5f;
+    c.step(mProc(cool), t += 1000);
+    assertAckOk(c, mProc(cool), t);
+}
+
+void test_ack_heater_hot_hysteresis() {
+    Controller c;
+    ControlSettings s;
+    uint32_t t = 0;
+    c.begin(s, t);
+    c.step(mBoth(50, 60), t);
+    c.start(t);
+    c.step(mBoth(60, s.maxHeaterC + 1), t += 1000);
+    TEST_ASSERT_EQUAL(Fault::OverTempHeater, c.status().fault);
+    const float inHyst = s.maxHeaterC - ackcfg::kHystC + 0.5f;
+    for (int k = 0; k < 10; ++k) c.step(mBoth(60, inHyst), t += 1000);
+    TEST_ASSERT_FALSE(c.ack(t));
+    TEST_ASSERT_EQUAL(AckBlock::HeaterHot, c.lastAckBlock());
+    // Датчик ТЭНа пропал на одно чтение — без нового достоверного значения сброса нет
+    Measurement lost = mBoth(60, 0);
+    lost.heaterValid = false;
+    lost.heaterFails = 1;
+    c.step(lost, t += 1000);
+    TEST_ASSERT_FALSE(c.ack(t));
+    TEST_ASSERT_EQUAL(AckBlock::SensorHeater, c.lastAckBlock());
+    const float cool = s.maxHeaterC - ackcfg::kHystC - 0.5f;
+    for (int k = 0; k < ackcfg::kValidReadings; ++k) c.step(mBoth(60, cool), t += 1000);
+    assertAckOk(c, mBoth(60, cool), t);
+}
+
+// SSR STUCK: пока температура растёт — отказ; после выдержки без роста — сброс
+static void runSsrStuck(uint32_t t0) {
+    Controller c;
+    ControlSettings s;
+    uint32_t t = t0;
+    c.begin(s, t);
+    c.raiseFault(Fault::IdleHeating, t);
+    float temp = 40;
+    // ТЭН ещё под напряжением: +0.1 °C/с в течение 10 мин
+    for (int k = 0; k < 600; ++k) {
+        c.step(mProc(temp), t += 1000);
+        temp += 0.1f;
+        if (k > ackcfg::kValidReadings) {
+            TEST_ASSERT_FALSE(c.ack(t));
+            TEST_ASSERT_EQUAL(AckBlock::StillRising, c.lastAckBlock());
+        }
+    }
+    // Силовую часть обесточили: остывает, затем стоит. Выдержка идёт с последнего роста.
+    const uint32_t steps = ackcfg::kStuckHoldMs / 1000;
+    for (uint32_t k = 0; k < steps - 1; ++k) {
+        temp -= 0.01f;
+        c.step(mProc(temp), t += 1000);
+    }
+    TEST_ASSERT_FALSE(c.ack(t));  // выдержка ещё не истекла
+    TEST_ASSERT_EQUAL(AckBlock::StillRising, c.lastAckBlock());
+    // Подъём на kStuckRiseC+ перезапускает выдержку
+    temp += ackcfg::kStuckRiseC + 0.2f;
+    c.step(mProc(temp), t += 1000);
+    c.step(mProc(temp), t += 1000);
+    TEST_ASSERT_FALSE(c.ack(t));
+    for (uint32_t k = 0; k < steps; ++k) c.step(mProc(temp), t += 1000);
+    assertAckOk(c, mProc(temp), t);
+}
+
+void test_ack_ssr_stuck_hold() { runSsrStuck(0); }
+
+void test_ack_millis_wrap() {
+    // Переполнение millis() во время выдержки SSR STUCK
+    runSsrStuck(0xFFFFFFFFu - 400u * 1000u);
+}
+
+void test_ack_ssr_stuck_sensor_loss_restarts_hold() {
+    Controller c;
+    ControlSettings s;
+    uint32_t t = 0;
+    c.begin(s, t);
+    c.raiseFault(Fault::IdleHeating, t);
+    const uint32_t steps = ackcfg::kStuckHoldMs / 1000;
+    for (uint32_t k = 0; k < steps - 10; ++k) c.step(mProc(50), t += 1000);
+    Measurement bad;
+    bad.procFails = 1;
+    c.step(bad, t += 1000);  // без данных отсутствие роста не доказано
+    for (uint32_t k = 0; k < 20; ++k) c.step(mProc(50), t += 1000);
+    TEST_ASSERT_FALSE(c.ack(t));
+    TEST_ASSERT_EQUAL(AckBlock::StillRising, c.lastAckBlock());
+    for (uint32_t k = 0; k < steps; ++k) c.step(mProc(50), t += 1000);
+    assertAckOk(c, mProc(50), t);
+}
+
+void test_ack_other_faults() {
+    const Fault faults[] = {Fault::NoHeatRise, Fault::TuneFailed, Fault::WatchdogReset};
+    for (Fault f : faults) {
+        Controller c;
+        ControlSettings s;
+        uint32_t t = 0;
+        c.begin(s, t);
+        c.raiseFault(f, t);
+        TEST_ASSERT_FALSE(c.ack(t));  // ещё ни одного измерения
+        TEST_ASSERT_EQUAL(AckBlock::SensorProcess, c.lastAckBlock());
+        for (int k = 0; k < ackcfg::kValidReadings; ++k) c.step(mProc(s.maxProcessC - 1), t += 1000);
+        TEST_ASSERT_FALSE(c.ack(t));  // перегрев (в пределах гистерезиса)
+        TEST_ASSERT_EQUAL(AckBlock::ProcessHot, c.lastAckBlock());
+        c.step(mProc(40), t += 1000);
+        assertAckOk(c, mProc(40), t);
+    }
+}
+
+void test_ack_outside_fault() {
+    Controller c;
+    ControlSettings s;
+    uint32_t t = 0;
+    c.begin(s, t);
+    TEST_ASSERT_EQUAL(AckBlock::None, c.ackBlock(t));
     TEST_ASSERT_TRUE(c.ack(t));
     TEST_ASSERT_EQUAL(Mode::Idle, c.status().mode);
 }
@@ -283,5 +489,14 @@ int main() {
     RUN_TEST(test_fault_no_heat_rise);
     RUN_TEST(test_fault_heater_overtemp);
     RUN_TEST(test_fault_ssr_stuck);
+    RUN_TEST(test_ack_sensor_needs_valid_streak);
+    RUN_TEST(test_ack_heater_sensor);
+    RUN_TEST(test_ack_overtemp_hysteresis);
+    RUN_TEST(test_ack_heater_hot_hysteresis);
+    RUN_TEST(test_ack_ssr_stuck_hold);
+    RUN_TEST(test_ack_millis_wrap);
+    RUN_TEST(test_ack_ssr_stuck_sensor_loss_restarts_hold);
+    RUN_TEST(test_ack_other_faults);
+    RUN_TEST(test_ack_outside_fault);
     return UNITY_END();
 }

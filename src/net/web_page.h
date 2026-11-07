@@ -78,7 +78,7 @@ async function poll(){try{const s=await api('/api/status');
  $('sp').textContent=s.sp.toFixed(1)+' / '+s.target.toFixed(1)+' °C';
  $('ht').textContent=s.heaterPresent?f1(s.heater,s.heaterValid):'нет';
  $('out').textContent=s.out.toFixed(0)+' %'+(s.ssr?' ●':'');$('outbar').style.width=s.out+'%';
- $('fault').textContent=s.fault?('Авария: '+s.faultText):'';
+ $('fault').textContent=s.fault?('Авария: '+s.faultText+(s.ackBlock?' — сброс пока невозможен: '+s.ackBlock:' — можно сбросить')):'';
  if(document.activeElement!==$('tgt'))$('tgt').value=s.target;
  $('info').textContent=s.mode=='TUNE'?('Автотюнинг: цикл '+s.tuneCycles):(s.ku?('Последний тюнинг: Ku='+s.ku.toFixed(2)+', Tu='+s.tu.toFixed(0)+' с'):'');
  $('foot').textContent=s.chip+' · FW '+s.fw+' · ID '+s.id+' · аптайм '+Math.floor(s.uptime/60)+' мин'+(s.rssi?' · RSSI '+s.rssi+' дБм':'');
