@@ -139,7 +139,10 @@ void Ui::handleInput(uint32_t now) {
                 sel_ = top_ = 0;
             } else if (b == ButtonEvent::Long) {
                 const Mode m = app::status().mode;
-                if (m == Mode::Fault) toast(app::ack() ? "Fault cleared" : "Fault active!");
+                if (m == Mode::Fault) {
+                    const ctl::AckBlock ab = app::ack();
+                    toast(ab == ctl::AckBlock::None ? "Fault cleared" : ctl::ackBlockName(ab));
+                }
                 else if (m == Mode::Idle) toast(app::start() ? "Heating ON" : "Cannot start");
                 else { app::stop(); toast("STOP"); }
             }
@@ -238,7 +241,10 @@ void Ui::onMenuClick(uint32_t now) {
                     screen_ = Screen::Main;
                     break;
                 case I_ACK:
-                    toast(app::ack() ? "Fault cleared" : "Fault active!");
+                    {
+                    const ctl::AckBlock ab = app::ack();
+                    toast(ab == ctl::AckBlock::None ? "Fault cleared" : ctl::ackBlockName(ab));
+                }
                     break;
                 case I_BACK:
                     screen_ = Screen::Main;

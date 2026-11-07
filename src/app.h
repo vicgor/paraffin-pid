@@ -27,7 +27,10 @@ bool heaterOn();
 bool start();
 void stop();
 bool startTune();
-bool ack();
+// Сброс аварии: AckBlock::None — сброшено (или аварии нет), иначе причина отказа.
+ctl::AckBlock ack();
+// Что мешает сбросу аварии сейчас (для статуса веб/MQTT).
+ctl::AckBlock ackBlock();
 void setTarget(float c);
 uint8_t takeEvents();
 

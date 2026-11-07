@@ -67,6 +67,11 @@ void statusJson(JsonDocument& d) {
     d["fault"] = (int)st.fault;
     d["faultName"] = ctl::faultName(st.fault);
     d["faultText"] = ctl::faultText(st.fault);
+    if (st.mode == ctl::Mode::Fault) {
+        // почему ack сейчас будет отклонён (пусто — сброс разрешён)
+        const ctl::AckBlock ab = app::ackBlock();
+        d["ackBlock"] = ab == ctl::AckBlock::None ? "" : ctl::ackBlockText(ab);
+    }
     d["pv"] = st.meas.procC;
     d["pvValid"] = st.meas.procValid;
     d["heater"] = st.meas.heaterC;
@@ -130,7 +135,8 @@ bool runCommand(const char* c, float value, const char** err) {
     } else if (!strcmp(c, "tune")) {
         if (!app::startTune()) { *err = "Нельзя запустить автотюнинг (авария или нет датчика)"; return false; }
     } else if (!strcmp(c, "ack")) {
-        if (!app::ack()) { *err = "Причина аварии не устранена"; return false; }
+        const ctl::AckBlock b = app::ack();
+        if (b != ctl::AckBlock::None) { *err = ctl::ackBlockText(b); return false; }
     } else if (!strcmp(c, "target")) {
         if (isnan(value)) { *err = "Нет значения"; return false; }
         app::setTarget(value);

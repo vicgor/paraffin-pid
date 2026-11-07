@@ -148,19 +148,75 @@ void Controller::enterFault(Fault f, uint32_t nowMs) {
     tune_.abort();
     st_.fault = f;
     st_.outPct = 0;
+    stuckHaveRef_ = false;  // выдержка SSR STUCK начинается с первого измерения в FAULT
+    stuckRefMs_ = nowMs;
     events_ |= EV_FAULT;
     setMode(Mode::Fault, nowMs);
 }
 
-bool Controller::ack(uint32_t nowMs) {
-    if (st_.mode != Mode::Fault) return true;
-    // Не даём сбросить аварию, пока её причина присутствует
+const char* ackBlockName(AckBlock b) {
+    switch (b) {
+        case AckBlock::None: return "OK";
+        case AckBlock::SensorProcess: return "WAIT SENSOR";
+        case AckBlock::SensorHeater: return "WAIT HTR SNS";
+        case AckBlock::ProcessHot: return "WAIT COOL";
+        case AckBlock::HeaterHot: return "WAIT HTR COOL";
+        case AckBlock::StillRising: return "WAIT NO RISE";
+        case AckBlock::SafetyCheck: return "CHECK FAIL";
+    }
+    return "?";
+}
+
+const char* ackBlockText(AckBlock b) {
+    switch (b) {
+        case AckBlock::None: return "Сброс разрешён";
+        case AckBlock::SensorProcess: return "Нет устойчивых показаний датчика парафина";
+        case AckBlock::SensorHeater: return "Нет устойчивых показаний датчика ТЭНа";
+        case AckBlock::ProcessHot: return "Парафин ещё не остыл ниже порога аварии с запасом";
+        case AckBlock::HeaterHot: return "ТЭН ещё не остыл ниже порога аварии с запасом";
+        case AckBlock::StillRising:
+            return "Температура растёт или не истекла выдержка: обесточьте ТЭН и проверьте SSR";
+        case AckBlock::SafetyCheck: return "Проверка защит обнаружила аварию";
+    }
+    return "?";
+}
+
+AckBlock Controller::ackBlock(uint32_t nowMs) const {
+    if (st_.mode != Mode::Fault) return AckBlock::None;
+    const Measurement& m = st_.meas;
+    using namespace ackcfg;
+
+    // Общие условия для любой аварии: перегрева нет, датчики достоверны N раз подряд.
+    // Перегрев проверяется первым, чтобы сообщить самую важную причину.
+    const bool hValid = m.heaterPresent && m.heaterValid;
+    if (m.procValid && m.procC >= s_.maxProcessC - kHystC) return AckBlock::ProcessHot;
+    if (hValid && m.heaterC >= s_.maxHeaterC - kHystC) return AckBlock::HeaterHot;
+    if (procValidRun_ < kValidReadings) return AckBlock::SensorProcess;
+    if (m.heaterPresent ? heaterValidRun_ < kValidReadings : s_.heaterSensorRequired != 0)
+        return AckBlock::SensorHeater;
+
+    // SSR STUCK: выдержка в FAULT без роста температуры.
+    if (st_.fault == Fault::IdleHeating && (!stuckHaveRef_ || nowMs - stuckRefMs_ < kStuckHoldMs))
+        return AckBlock::StillRising;
+
+    // Проверка текущего измерения теми же правилами, что и в step().
     SafetyMonitor probe;
     probe.reset(nowMs);
-    SafetyInputs in = safetyInputs(st_.meas);
+    SafetyInputs in = safetyInputs(m);
     in.heatingEnabled = false;
-    if (probe.check(in, s_, nowMs) != Fault::None) return false;
+    if (probe.check(in, s_, nowMs) != Fault::None) return AckBlock::SafetyCheck;
+    return AckBlock::None;
+}
+
+bool Controller::ack(uint32_t nowMs) {
+    lastAckBlock_ = AckBlock::None;
+    if (st_.mode != Mode::Fault) return true;
+    // Не даём сбросить аварию, пока её причина присутствует
+    lastAckBlock_ = ackBlock(nowMs);
+    if (lastAckBlock_ != AckBlock::None) return false;
     st_.fault = Fault::None;
+    st_.outPct = 0;
+    stuckHaveRef_ = false;
     safety_.reset(nowMs);
     st_.mode = Mode::Idle;  // напрямую: wasRunning уже сброшен
     st_.modeSinceMs = nowMs;
@@ -189,9 +245,34 @@ float Controller::step(const Measurement& m, uint32_t nowMs) {
     if (dt > 10) dt = 10;  // защита от больших пропусков
     st_.meas = m;
 
+    // Счётчики достоверных измерений подряд (насыщение, без переполнения)
+    procValidRun_ = m.procValid ? (procValidRun_ < 0xFFFF ? procValidRun_ + 1 : procValidRun_) : 0;
+    const bool hOk = m.heaterPresent && m.heaterValid;
+    heaterValidRun_ = hOk ? (heaterValidRun_ < 0xFFFF ? heaterValidRun_ + 1 : heaterValidRun_) : 0;
+
     if (st_.mode != Mode::Fault) {
         const Fault f = safety_.check(safetyInputs(m), s_, nowMs);
         if (f != Fault::None) enterFault(f, nowMs);
+    }
+
+    // SSR STUCK: ищем момент, с которого температура перестала расти.
+    // Снижение температуры выдержку не сбрасывает, рост больше kStuckRiseC — сбрасывает.
+    if (st_.mode == Mode::Fault && st_.fault == Fault::IdleHeating) {
+        if (!m.procValid || (m.heaterPresent && !m.heaterValid)) {
+            stuckHaveRef_ = false;  // без достоверных данных отсутствие роста не доказано
+        } else {
+            const float t = hOk && m.heaterC > m.procC ? m.heaterC : m.procC;
+            if (!stuckHaveRef_) {
+                stuckHaveRef_ = true;
+                stuckRefC_ = t;
+                stuckRefMs_ = nowMs;
+            } else if (t > stuckRefC_ + ackcfg::kStuckRiseC) {
+                stuckRefC_ = t;
+                stuckRefMs_ = nowMs;
+            } else if (t < stuckRefC_) {
+                stuckRefC_ = t;
+            }
+        }
     }
 
     float out = 0;
