@@ -266,6 +266,96 @@ void test_sanitize() {
     TEST_ASSERT_FALSE(isnan(s.kp));
 }
 
+// Инвариант после sanitize: spMinC <= targetC <= spMaxC < maxProcessC, всё конечно
+static void assertInvariant(const ControlSettings& s) {
+    TEST_ASSERT_TRUE(isfinite(s.targetC) && isfinite(s.spMinC) && isfinite(s.spMaxC));
+    TEST_ASSERT_TRUE(isfinite(s.maxProcessC) && isfinite(s.maxHeaterC));
+    TEST_ASSERT_TRUE(s.maxProcessC >= 30 && s.maxProcessC <= 125);
+    TEST_ASSERT_TRUE(s.maxHeaterC >= 30 && s.maxHeaterC <= 125);
+    TEST_ASSERT_TRUE(s.spMinC < s.spMaxC);
+    TEST_ASSERT_TRUE(s.spMaxC < s.maxProcessC);
+    TEST_ASSERT_TRUE(s.targetC >= s.spMinC && s.targetC <= s.spMaxC);
+}
+
+void test_sanitize_limits() {
+    // Порог 500 °C → не выше 125 (предел DS18B20)
+    ControlSettings s;
+    s.maxProcessC = 500;
+    s.maxHeaterC = 500;
+    sanitize(s);
+    TEST_ASSERT_EQUAL_FLOAT(125, s.maxProcessC);
+    TEST_ASSERT_EQUAL_FLOAT(125, s.maxHeaterC);
+    assertInvariant(s);
+
+    // Слишком низкий порог аварии тянет за собой spMinC/spMaxC/targetC
+    s = ControlSettings();
+    s.maxProcessC = 30;
+    s.spMinC = 100;
+    s.targetC = 300;
+    sanitize(s);
+    TEST_ASSERT_EQUAL_FLOAT(30, s.maxProcessC);
+    assertInvariant(s);
+
+    // Отрицательные и нулевые пороги
+    s = ControlSettings();
+    s.maxProcessC = -50;
+    s.maxHeaterC = 0;
+    s.spMinC = -10;
+    s.spMaxC = -5;
+    sanitize(s);
+    assertInvariant(s);
+
+    // Повторный sanitize ничего не меняет (идемпотентность)
+    ControlSettings again = s;
+    TEST_ASSERT_FALSE(sanitize(again));
+}
+
+void test_sanitize_nan_inf() {
+    const ControlSettings def;
+    ControlSettings s;
+    s.targetC = NAN;
+    s.maxProcessC = INFINITY;
+    s.maxHeaterC = -INFINITY;
+    s.spMaxC = NAN;
+    s.kp = INFINITY;
+    s.ki = NAN;
+    s.outMaxPct = NAN;
+    TEST_ASSERT_TRUE(sanitize(s));
+    TEST_ASSERT_EQUAL_FLOAT(def.targetC, s.targetC);
+    TEST_ASSERT_EQUAL_FLOAT(def.maxProcessC, s.maxProcessC);
+    TEST_ASSERT_EQUAL_FLOAT(def.maxHeaterC, s.maxHeaterC);
+    TEST_ASSERT_EQUAL_FLOAT(def.spMaxC, s.spMaxC);
+    TEST_ASSERT_EQUAL_FLOAT(def.kp, s.kp);
+    TEST_ASSERT_EQUAL_FLOAT(def.ki, s.ki);
+    TEST_ASSERT_EQUAL_FLOAT(def.outMaxPct, s.outMaxPct);
+    assertInvariant(s);
+}
+
+void test_set_target_guards() {
+    Controller c;
+    ControlSettings s;
+    uint32_t t = 0;
+    c.begin(s, t);
+    c.setTarget(80);
+    TEST_ASSERT_EQUAL_FLOAT(80, c.settings().targetC);
+    c.setTarget(NAN);  // игнорируется
+    TEST_ASSERT_EQUAL_FLOAT(80, c.settings().targetC);
+    c.setTarget(INFINITY);
+    TEST_ASSERT_EQUAL_FLOAT(80, c.settings().targetC);
+    c.setTarget(300);  // выше spMaxC → spMaxC
+    TEST_ASSERT_EQUAL_FLOAT(c.settings().spMaxC, c.settings().targetC);
+    TEST_ASSERT_TRUE(c.settings().targetC < c.settings().maxProcessC);
+    c.setTarget(-40);
+    TEST_ASSERT_EQUAL_FLOAT(c.settings().spMinC, c.settings().targetC);
+
+    // applySettings тоже проходит через sanitize
+    ControlSettings bad = c.settings();
+    bad.maxProcessC = 500;
+    bad.targetC = 400;
+    c.applySettings(bad);
+    assertInvariant(c.settings());
+}
+
 void setUp() {}
 void tearDown() {}
 
@@ -276,6 +366,9 @@ int main() {
     RUN_TEST(test_ramp);
     RUN_TEST(test_gains_rules);
     RUN_TEST(test_sanitize);
+    RUN_TEST(test_sanitize_limits);
+    RUN_TEST(test_sanitize_nan_inf);
+    RUN_TEST(test_set_target_guards);
     RUN_TEST(test_closed_loop_default_gains_with_melting);
     RUN_TEST(test_autotune_then_regulate);
     RUN_TEST(test_fault_overtemp_and_ack);

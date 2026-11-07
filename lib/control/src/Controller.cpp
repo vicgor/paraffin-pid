@@ -5,7 +5,12 @@
 
 namespace ctl {
 
-static float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+// NaN-безопасное ограничение: NaN/Inf превращаются в нижнюю границу,
+// а не проходят дальше (сравнения с NaN всегда ложны).
+static float clampf(float v, float lo, float hi) {
+    if (!isfinite(v)) return lo;
+    return v < lo ? lo : (v > hi ? hi : v);
+}
 
 bool sanitize(ControlSettings& s) {
     ControlSettings o = s;
@@ -23,7 +28,8 @@ bool sanitize(ControlSettings& s) {
 
     s.maxProcessC = clampf(s.maxProcessC, 30, 125);  // DS18B20: до 125 °C
     s.maxHeaterC = clampf(s.maxHeaterC, 30, 125);
-    s.spMinC = clampf(s.spMinC, 0, 100);
+    // Инвариант: spMinC < spMaxC < maxProcessC, уставка всегда ниже порога аварии.
+    s.spMinC = clampf(s.spMinC, 0, fminf(100, s.maxProcessC - 3));
     s.spMaxC = clampf(s.spMaxC, s.spMinC + 1, s.maxProcessC - 2);
     s.targetC = clampf(s.targetC, s.spMinC, s.spMaxC);
     s.rampCpm = clampf(s.rampCpm, 0, 60);
@@ -90,6 +96,7 @@ void Controller::applySettings(const ControlSettings& in) {
 }
 
 void Controller::setTarget(float c) {
+    if (!isfinite(c)) return;  // NaN/Inf из MQTT/CLI игнорируем, уставка прежняя
     s_.targetC = clampf(c, s_.spMinC, s_.spMaxC);
     st_.targetC = s_.targetC;
     atTempEventSent_ = false;
@@ -248,7 +255,7 @@ float Controller::step(const Measurement& m, uint32_t nowMs) {
             break;
     }
 
-    if (out < 0) out = 0;
+    if (!isfinite(out) || out < 0) out = 0;  // NaN не должен попасть на SSR
     if (out > s_.outMaxPct) out = s_.outMaxPct;
     st_.outPct = out;
     st_.p = pid_.pTerm();

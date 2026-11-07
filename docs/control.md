@@ -129,6 +129,28 @@ SSR STUCK отслеживает рост температуры при выкл
 [app.cpp](../src/app.cpp),
 [ssr.h](../src/ssr.h).
 
+## Допустимые значения настроек
+
+Все пути записи настроек (CLI `set`/`pid`/`sp`, веб `POST /api/settings`,
+меню энкодера, загрузка из флеша) проходят через `sanitize()`. После него
+всегда выполняется инвариант:
+
+- `maxProcessC` и `maxHeaterC` в диапазоне 30–125 °C (предел DS18B20);
+- `spMinC < spMaxC ≤ maxProcessC − 2`, `spMinC ≤ maxProcessC − 3`;
+- `spMinC ≤ targetC ≤ spMaxC`, то есть уставка всегда ниже порога аварии;
+- NaN и ±Inf в float-полях заменяются значениями по умолчанию.
+
+`setTarget()` игнорирует NaN/Inf и ограничивает уставку диапазоном
+`spMinC..spMaxC`. Выход регулятора, оказавшийся NaN, обнуляется. CLI и MQTT
+`target/set` отклоняют нечисловой ввод (`abc`, `70x`, `nan`) вместо записи 0.
+CLI печатает, а веб возвращает в ответе фактически применённое значение.
+
+Источники:
+[Controller.cpp](../lib/control/src/Controller.cpp),
+[settings_fields.h](../src/settings_fields.h),
+[cli.cpp](../src/cli.cpp),
+[net.cpp](../src/net/net.cpp).
+
 ## Перезагрузка и сброс аварии
 
 ### Поведение при перезагрузке

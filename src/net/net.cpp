@@ -132,7 +132,7 @@ bool runCommand(const char* c, float value, const char** err) {
     } else if (!strcmp(c, "ack")) {
         if (!app::ack()) { *err = "Причина аварии не устранена"; return false; }
     } else if (!strcmp(c, "target")) {
-        if (isnan(value)) { *err = "Нет значения"; return false; }
+        if (!isfinite(value)) { *err = "Нет значения"; return false; }
         app::setTarget(value);
     } else {
         *err = "Неизвестная команда";
@@ -153,6 +153,7 @@ void hCmd() {
     JsonDocument out;
     out["ok"] = ok;
     if (!ok) out["error"] = err;
+    out["target"] = app::controlSettings().targetC;  // фактически применённая уставка
     sendJson(out, ok ? 200 : 409);
 }
 
@@ -195,6 +196,8 @@ void hSettingsPost() {
     if (in["ctl"].is<JsonObjectConst>()) {
         ctl::ControlSettings cs = app::controlSettings();
         for (JsonPairConst kv : in["ctl"].as<JsonObjectConst>()) {
+            // только числа: строка "abc" через as<float>() дала бы 0
+            if (!kv.value().is<float>()) continue;
             if (const FieldDef* f = findField(kv.key().c_str())) fieldSet(cs, *f, kv.value().as<float>());
         }
         app::applyControlSettings(cs);
@@ -215,7 +218,13 @@ void hSettingsPost() {
         if (!n["buzzer"].isNull()) app::settings().buzzer = n["buzzer"].as<uint8_t>() ? 1 : 0;
     }
     app::saveNow();
-    g_server.send(200, "application/json", "{\"ok\":true}");
+    // Возвращаем фактически применённые значения (после sanitize)
+    const ctl::ControlSettings cs = app::controlSettings();
+    JsonDocument out;
+    out["ok"] = true;
+    JsonObject o = out["ctl"].to<JsonObject>();
+    for (size_t k = 0; k < kFieldCount; ++k) o[kFields[k].key] = fieldGet(cs, kFields[k]);
+    sendJson(out, 200);
 }
 
 void hReboot() {
@@ -324,7 +333,13 @@ void onMqtt(char* tp, uint8_t* payload, unsigned int len) {
     const char* suffix = tp + strlen(g_base) + 1;
     const char* err;
     if (!strcmp(suffix, "cmd")) runCommand(msg, NAN, &err);
-    else if (!strcmp(suffix, "target/set")) runCommand("target", atof(msg), &err);
+    else if (!strcmp(suffix, "target/set")) {
+        // строгий разбор: "abc" или "70x" не должны превращаться в 0 °C
+        char* end = nullptr;
+        float v = strtof(msg, &end);
+        if (end == msg || *end != 0) v = NAN;
+        runCommand("target", v, &err);
+    }
     else if (!strcmp(suffix, "mode/set")) runCommand(!strcmp(msg, "heat") ? "start" : "stop", NAN, &err);
     g_mqttPubAt = 0;  // сразу опубликовать новое состояние
 }
